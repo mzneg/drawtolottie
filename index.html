@@ -1141,103 +1141,110 @@
                 // Native iPad apps don't simplify - they use all the data
                 const simplifiedPoints = stroke.points;
                 
-                // Convert stroke to filled shape with variable width
-                const segmentPoints = simplifiedPoints;
+                // Create many small filled shape segments with overlap
+                // This gives us both smoothness AND pressure sensitivity
+                const segmentSize = 8; // Points per segment
+                const stepSize = 2; // Heavy overlap (75%)
                 
-                if (segmentPoints.length < 2) return;
-                
-                // Create outline points for variable width
-                const leftEdge = [];
-                const rightEdge = [];
-                
-                for (let i = 0; i < segmentPoints.length; i++) {
-                    const p = segmentPoints[i];
-                    const width = stroke.baseWidth * p.pressure;
-                    const halfWidth = width / 2;
+                for (let i = 0; i < simplifiedPoints.length - 1; i += stepSize) {
+                    const endIdx = Math.min(i + segmentSize, simplifiedPoints.length);
+                    const segmentPoints = simplifiedPoints.slice(i, endIdx);
                     
-                    // Calculate perpendicular direction
-                    let perpX, perpY;
-                    if (i === 0) {
-                        // First point - use direction to next
-                        const next = segmentPoints[i + 1];
-                        const dx = next.x - p.x;
-                        const dy = next.y - p.y;
-                        const len = Math.sqrt(dx * dx + dy * dy);
-                        perpX = -dy / len;
-                        perpY = dx / len;
-                    } else if (i === segmentPoints.length - 1) {
-                        // Last point - use direction from previous
-                        const prev = segmentPoints[i - 1];
-                        const dx = p.x - prev.x;
-                        const dy = p.y - prev.y;
-                        const len = Math.sqrt(dx * dx + dy * dy);
-                        perpX = -dy / len;
-                        perpY = dx / len;
-                    } else {
-                        // Middle points - average direction
-                        const prev = segmentPoints[i - 1];
-                        const next = segmentPoints[i + 1];
-                        const dx = next.x - prev.x;
-                        const dy = next.y - prev.y;
-                        const len = Math.sqrt(dx * dx + dy * dy);
-                        perpX = -dy / len;
-                        perpY = dx / len;
+                    if (segmentPoints.length < 2) continue;
+                    
+                    // Create variable-width outline for this segment
+                    const leftEdge = [];
+                    const rightEdge = [];
+                    
+                    for (let j = 0; j < segmentPoints.length; j++) {
+                        const p = segmentPoints[j];
+                        const width = stroke.baseWidth * p.pressure;
+                        const halfWidth = width / 2;
+                        
+                        // Calculate perpendicular direction
+                        let perpX, perpY;
+                        if (j === 0 && i === 0) {
+                            // Very first point
+                            const next = segmentPoints[j + 1];
+                            const dx = next.x - p.x;
+                            const dy = next.y - p.y;
+                            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                            perpX = -dy / len;
+                            perpY = dx / len;
+                        } else if (j === segmentPoints.length - 1 && endIdx === simplifiedPoints.length) {
+                            // Very last point
+                            const prev = segmentPoints[j - 1];
+                            const dx = p.x - prev.x;
+                            const dy = p.y - prev.y;
+                            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                            perpX = -dy / len;
+                            perpY = dx / len;
+                        } else {
+                            // Middle points - use smooth average
+                            const prevIdx = Math.max(0, i + j - 1);
+                            const nextIdx = Math.min(simplifiedPoints.length - 1, i + j + 1);
+                            const prev = simplifiedPoints[prevIdx];
+                            const next = simplifiedPoints[nextIdx];
+                            const dx = next.x - prev.x;
+                            const dy = next.y - prev.y;
+                            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                            perpX = -dy / len;
+                            perpY = dx / len;
+                        }
+                        
+                        leftEdge.push({
+                            x: p.x + perpX * halfWidth,
+                            y: p.y + perpY * halfWidth,
+                            pressure: 1
+                        });
+                        
+                        rightEdge.push({
+                            x: p.x - perpX * halfWidth,
+                            y: p.y - perpY * halfWidth,
+                            pressure: 1
+                        });
                     }
                     
-                    // Create left and right edge points
-                    leftEdge.push({
-                        x: p.x + perpX * halfWidth,
-                        y: p.y + perpY * halfWidth,
-                        pressure: 1 // Full pressure for outline
-                    });
+                    // Create closed shape
+                    const shapePoints = [...leftEdge, ...rightEdge.reverse()];
+                    const bezierPath = createSmoothBezierPath(shapePoints);
+                    bezierPath.c = true;
                     
-                    rightEdge.push({
-                        x: p.x - perpX * halfWidth,
-                        y: p.y - perpY * halfWidth,
-                        pressure: 1
-                    });
-                }
-                
-                // Create closed shape path: left edge forward + right edge backward
-                const shapePoints = [...leftEdge, ...rightEdge.reverse()];
-                const bezierPath = createSmoothBezierPath(shapePoints);
-                bezierPath.c = true; // Close the path
-                
-                const startTime = segmentPoints[0].time;
-                const endTime = segmentPoints[segmentPoints.length - 1].time;
-                const startFrame = (startTime / 1000 / speed) * fps;
-                const endFrame = (endTime / 1000 / speed) * fps;
-                
-                // Opacity based on brush
-                let opacity = 100;
-                if (stroke.brushType === 'marker') {
-                    opacity = 60;
-                } else if (stroke.brushType === 'pencil') {
-                    opacity = 70;
-                }
-                
-                const layer = {
-                    ddd: 0,
-                    ind: layerIndex + 1,
-                    ty: 4,
-                    nm: `Stroke ${strokeIdx + 1}`,
-                    sr: 1,
-                    ks: {
-                        o: {
-                            a: 1,
-                            k: [
-                                { t: startFrame, s: [0] },
-                                { t: startFrame + 1, s: [opacity] }
-                            ],
-                            ix: 11
+                    const startTime = segmentPoints[0].time;
+                    const endTime = segmentPoints[segmentPoints.length - 1].time;
+                    const startFrame = (startTime / 1000 / speed) * fps;
+                    const endFrame = (endTime / 1000 / speed) * fps;
+                    
+                    // Opacity based on brush
+                    let opacity = 100;
+                    if (stroke.brushType === 'marker') {
+                        opacity = 60;
+                    } else if (stroke.brushType === 'pencil') {
+                        opacity = 70;
+                    }
+                    
+                    const layer = {
+                        ddd: 0,
+                        ind: layerIndex + 1,
+                        ty: 4,
+                        nm: `Stroke ${strokeIdx + 1} Seg ${Math.floor(i / stepSize)}`,
+                        sr: 1,
+                        ks: {
+                            o: {
+                                a: 1,
+                                k: [
+                                    { t: startFrame, s: [0] },
+                                    { t: startFrame + 1, s: [opacity] }
+                                ],
+                                ix: 11
+                            },
+                            r: { a: 0, k: 0, ix: 10 },
+                            p: { a: 0, k: [0, 0, 0], ix: 2 },
+                            a: { a: 0, k: [0, 0, 0], ix: 1 },
+                            s: { a: 0, k: [100, 100, 100], ix: 6 }
                         },
-                        r: { a: 0, k: 0, ix: 10 },
-                        p: { a: 0, k: [0, 0, 0], ix: 2 },
-                        a: { a: 0, k: [0, 0, 0], ix: 1 },
-                        s: { a: 0, k: [100, 100, 100], ix: 6 }
-                    },
-                    ao: 0,
-                    shapes: [
+                        ao: 0,
+                        shapes: [
                             {
                                 ty: "gr",
                                 it: [
@@ -1295,8 +1302,9 @@
                         bm: 0
                     };
                 
-                lottieJSON.layers.push(layer);
-                layerIndex++;
+                    lottieJSON.layers.push(layer);
+                    layerIndex++;
+                }
             });
             
             return lottieJSON;
