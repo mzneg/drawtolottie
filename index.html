@@ -197,6 +197,7 @@
             <div class="setting-group">
                 <label>Color:</label>
                 <input type="color" id="strokeColor" value="#000000">
+                <input type="text" id="hexInput" value="#000000" maxlength="7" style="width: 80px; padding: 6px; border: 1px solid #ddd; border-radius: 4px; font-family: monospace; text-transform: uppercase;">
             </div>
             <div class="setting-group">
                 <label>Width:</label>
@@ -211,6 +212,10 @@
             <div class="setting-group">
                 <label>Pressure:</label>
                 <span id="pressureValue" style="font-weight: 500; color: #007bff;">0%</span>
+            </div>
+            <div class="setting-group">
+                <input type="checkbox" id="pencilOnlyMode" style="cursor: pointer;">
+                <label for="pencilOnlyMode" style="cursor: pointer;">Apple Pencil Only</label>
             </div>
         </div>
         
@@ -292,6 +297,8 @@
         
         <div class="controls">
             <button class="btn-primary" id="clearBtn">Clear Canvas</button>
+            <button class="btn-secondary" id="undoBtn">Undo</button>
+            <button class="btn-secondary" id="redoBtn">Redo</button>
             <button class="btn-secondary" id="replayBtn">Replay Drawing</button>
             <button class="btn-secondary" id="previewAnimBtn">Preview Lottie</button>
             <button class="btn-success" id="exportBtn">Export Lottie JSON</button>
@@ -313,10 +320,12 @@
         const ctx = canvas.getContext('2d');
         const brushTypeInput = document.getElementById('brushType');
         const strokeColorInput = document.getElementById('strokeColor');
+        const hexInput = document.getElementById('hexInput');
         const strokeWidthInput = document.getElementById('strokeWidth');
         const widthValueSpan = document.getElementById('widthValue');
         const animationSpeedInput = document.getElementById('animationSpeed');
         const pressureValueSpan = document.getElementById('pressureValue');
+        const pencilOnlyMode = document.getElementById('pencilOnlyMode');
         const easingTypeInput = document.getElementById('easingType');
         const loopTypeInput = document.getElementById('loopType');
         const customCurveControls = document.getElementById('customCurveControls');
@@ -330,6 +339,8 @@
         const easingPreviewCtx = easingPreviewCanvas.getContext('2d');
         const curvePresets = document.getElementById('curvePresets');
         const clearBtn = document.getElementById('clearBtn');
+        const undoBtn = document.getElementById('undoBtn');
+        const redoBtn = document.getElementById('redoBtn');
         const replayBtn = document.getElementById('replayBtn');
         const previewAnimBtn = document.getElementById('previewAnimBtn');
         const exportBtn = document.getElementById('exportBtn');
@@ -338,6 +349,7 @@
         
         let isDrawing = false;
         let strokes = [];
+        let redoStack = [];
         let currentStroke = [];
         let startTime = 0;
         let lottieInstance = null;
@@ -460,6 +472,42 @@
         // Start easing preview on load
         setTimeout(() => animateEasingPreview(), 100);
         
+        // Sync color picker and hex input
+        strokeColorInput.addEventListener('input', (e) => {
+            hexInput.value = e.target.value.toUpperCase();
+        });
+        
+        hexInput.addEventListener('input', (e) => {
+            let hex = e.target.value.trim();
+            
+            // Auto-add # if missing
+            if (hex.length > 0 && !hex.startsWith('#')) {
+                hex = '#' + hex;
+                hexInput.value = hex;
+            }
+            
+            // Validate hex format
+            if (/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+                strokeColorInput.value = hex;
+            }
+        });
+        
+        hexInput.addEventListener('blur', (e) => {
+            // Ensure valid format on blur
+            let hex = e.target.value.trim();
+            if (!hex.startsWith('#')) {
+                hex = '#' + hex;
+            }
+            
+            // If not valid, reset to current color
+            if (!/^#[0-9A-Fa-f]{6}$/.test(hex)) {
+                hexInput.value = strokeColorInput.value.toUpperCase();
+            } else {
+                hexInput.value = hex.toUpperCase();
+                strokeColorInput.value = hex;
+            }
+        });
+        
         // Update curve preview when values change
         curveX1Input.addEventListener('input', () => {
             drawCurvePreview();
@@ -548,6 +596,11 @@
         }
         
         function startDrawing(e) {
+            // Check if pencil only mode is enabled
+            if (pencilOnlyMode.checked && e.pointerType !== 'pen') {
+                return; // Ignore touch and mouse input when pencil only mode is on
+            }
+            
             e.preventDefault();
             isDrawing = true;
             if (strokes.length === 0) {
@@ -578,6 +631,12 @@
         
         function draw(e) {
             if (!isDrawing) return;
+            
+            // Check if pencil only mode is enabled
+            if (pencilOnlyMode.checked && e.pointerType !== 'pen') {
+                return; // Ignore touch and mouse input when pencil only mode is on
+            }
+            
             e.preventDefault();
             
             const pos = getPointerPosition(e);
@@ -683,6 +742,7 @@
             pressureValueSpan.textContent = '0%';
             if (currentStroke.points.length > 0) {
                 strokes.push(currentStroke);
+                redoStack = []; // Clear redo history when new stroke is added
             }
         }
         
@@ -690,9 +750,162 @@
         clearBtn.addEventListener('click', () => {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             strokes = [];
+            redoStack = [];
             startTime = 0;
             pressureValueSpan.textContent = '0%';
             showStatus('Canvas cleared');
+        });
+        
+        // Redraw canvas from strokes
+        function redrawCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            strokes.forEach(stroke => {
+                for (let i = 1; i < stroke.points.length; i++) {
+                    const prevPoint = stroke.points[i - 1];
+                    const currPoint = stroke.points[i];
+                    const avgPressure = (prevPoint.pressure + currPoint.pressure) / 2;
+                    const lineWidth = stroke.baseWidth * avgPressure;
+                    
+                    ctx.strokeStyle = stroke.color;
+                    ctx.fillStyle = stroke.color;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    
+                    const brushType = stroke.brushType;
+                    
+                    if (brushType === 'solid') {
+                        ctx.lineWidth = lineWidth;
+                        ctx.beginPath();
+                        ctx.moveTo(prevPoint.x, prevPoint.y);
+                        ctx.lineTo(currPoint.x, currPoint.y);
+                        ctx.stroke();
+                    } else if (brushType === 'marker') {
+                        ctx.lineWidth = lineWidth;
+                        ctx.globalAlpha = 0.6;
+                        ctx.beginPath();
+                        ctx.moveTo(prevPoint.x, prevPoint.y);
+                        ctx.lineTo(currPoint.x, currPoint.y);
+                        ctx.stroke();
+                        ctx.globalAlpha = 1.0;
+                    } else if (brushType === 'spray') {
+                        const distance = Math.sqrt(Math.pow(currPoint.x - prevPoint.x, 2) + Math.pow(currPoint.y - prevPoint.y, 2));
+                        const density = Math.max(1, Math.floor(distance / 2));
+                        
+                        for (let j = 0; j < density; j++) {
+                            const t = j / density;
+                            const x = prevPoint.x + (currPoint.x - prevPoint.x) * t;
+                            const y = prevPoint.y + (currPoint.y - prevPoint.y) * t;
+                            
+                            const sprayRadius = lineWidth * 2;
+                            const offsetX = (Math.random() - 0.5) * sprayRadius;
+                            const offsetY = (Math.random() - 0.5) * sprayRadius;
+                            
+                            ctx.globalAlpha = Math.random() * 0.5 + 0.3;
+                            ctx.beginPath();
+                            ctx.arc(x + offsetX, y + offsetY, Math.random() * 1.5, 0, Math.PI * 2);
+                            ctx.fill();
+                        }
+                        ctx.globalAlpha = 1.0;
+                    } else if (brushType === 'pencil') {
+                        ctx.lineWidth = lineWidth;
+                        ctx.globalAlpha = 0.7;
+                        ctx.beginPath();
+                        ctx.moveTo(prevPoint.x, prevPoint.y);
+                        ctx.lineTo(currPoint.x, currPoint.y);
+                        ctx.stroke();
+                        
+                        for (let j = 0; j < 3; j++) {
+                            const offset = (Math.random() - 0.5) * lineWidth * 0.5;
+                            ctx.lineWidth = 0.5;
+                            ctx.globalAlpha = Math.random() * 0.3;
+                            ctx.beginPath();
+                            ctx.moveTo(prevPoint.x + offset, prevPoint.y + offset);
+                            ctx.lineTo(currPoint.x + offset, currPoint.y + offset);
+                            ctx.stroke();
+                        }
+                        ctx.globalAlpha = 1.0;
+                    } else if (brushType === 'calligraphy') {
+                        const angle = Math.atan2(currPoint.y - prevPoint.y, currPoint.x - prevPoint.x);
+                        const calligraphyAngle = Math.PI / 4;
+                        const widthMultiplier = Math.abs(Math.cos(angle - calligraphyAngle)) * 0.7 + 0.3;
+                        
+                        ctx.lineWidth = lineWidth * widthMultiplier;
+                        ctx.beginPath();
+                        ctx.moveTo(prevPoint.x, prevPoint.y);
+                        ctx.lineTo(currPoint.x, currPoint.y);
+                        ctx.stroke();
+                    }
+                }
+            });
+        }
+        
+        // Undo
+        undoBtn.addEventListener('click', () => {
+            if (strokes.length === 0) {
+                showStatus('Nothing to undo');
+                return;
+            }
+            
+            const lastStroke = strokes.pop();
+            redoStack.push(lastStroke);
+            redrawCanvas();
+            showStatus('Undo successful');
+        });
+        
+        // Redo
+        redoBtn.addEventListener('click', () => {
+            if (redoStack.length === 0) {
+                showStatus('Nothing to redo');
+                return;
+            }
+            
+            const strokeToRestore = redoStack.pop();
+            strokes.push(strokeToRestore);
+            redrawCanvas();
+            showStatus('Redo successful');
+        });
+        
+        // Keyboard shortcuts
+        document.addEventListener('keydown', (e) => {
+            // Ctrl+Z or Cmd+Z for undo
+            if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
+                e.preventDefault();
+                undoBtn.click();
+            }
+            // Ctrl+Y or Cmd+Y or Ctrl+Shift+Z for redo
+            else if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || (e.shiftKey && e.key === 'z'))) {
+                e.preventDefault();
+                redoBtn.click();
+            }
+        });
+        
+        // Touch gestures for iPad (two-finger tap = undo, three-finger tap = redo)
+        let touchStartTime = 0;
+        let touchCount = 0;
+        const tapTimeout = 300; // Maximum time for a tap in milliseconds
+        
+        canvas.addEventListener('touchstart', (e) => {
+            touchCount = e.touches.length;
+            touchStartTime = Date.now();
+        }, { passive: true });
+        
+        canvas.addEventListener('touchend', (e) => {
+            const touchDuration = Date.now() - touchStartTime;
+            
+            // Only trigger if it was a quick tap (not a drag)
+            if (touchDuration < tapTimeout) {
+                // Two-finger tap for undo
+                if (touchCount === 2) {
+                    e.preventDefault();
+                    undoBtn.click();
+                }
+                // Three-finger tap for redo
+                else if (touchCount === 3) {
+                    e.preventDefault();
+                    redoBtn.click();
+                }
+            }
         });
         
         // Replay animation
