@@ -1146,10 +1146,6 @@
                 
                 if (segmentPoints.length < 2) return;
                 
-                // Average pressure for stroke width
-                const avgPressure = segmentPoints.reduce((sum, p) => sum + p.pressure, 0) / segmentPoints.length;
-                const segmentWidth = stroke.baseWidth * avgPressure;
-                
                 // Create one smooth bezier path for entire stroke
                 const bezierPath = createSmoothBezierPath(segmentPoints);
                 
@@ -1157,6 +1153,36 @@
                 const endTime = segmentPoints[segmentPoints.length - 1].time;
                 const startFrame = (startTime / 1000 / speed) * fps;
                 const endFrame = (endTime / 1000 / speed) * fps;
+                
+                // Create animated stroke width keyframes for pressure sensitivity
+                const widthKeyframes = [];
+                const totalDuration = endTime - startTime;
+                
+                // Sample pressure at regular intervals for smooth animation
+                const sampleCount = Math.min(segmentPoints.length, 50); // Max 50 keyframes
+                const step = Math.max(1, Math.floor(segmentPoints.length / sampleCount));
+                
+                for (let i = 0; i < segmentPoints.length; i += step) {
+                    const p = segmentPoints[i];
+                    const t = p.time - startTime;
+                    const frame = startFrame + (t / 1000 / speed) * fps;
+                    const width = stroke.baseWidth * p.pressure;
+                    
+                    widthKeyframes.push({
+                        i: { x: [0.833], y: [0.833] },
+                        o: { x: [0.167], y: [0.167] },
+                        t: frame,
+                        s: [width]
+                    });
+                }
+                
+                // Add last point
+                const lastPoint = segmentPoints[segmentPoints.length - 1];
+                const lastWidth = stroke.baseWidth * lastPoint.pressure;
+                widthKeyframes.push({
+                    t: endFrame,
+                    s: [lastWidth]
+                });
                 
                 // Line cap based on brush
                 let lineCap = 2; // round
@@ -1205,9 +1231,13 @@
                                     },
                                     {
                                         ty: "st",
-                                        c: { a: 0, k: [rgb.r, rgb.g, rgb.b, 1], ix: 3 },
+                                        c: {
+                                            a: 0,
+                                            k: [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1],
+                                            ix: 3
+                                        },
                                         o: { a: 0, k: 100, ix: 4 },
-                                        w: { a: 0, k: segmentWidth, ix: 5 },
+                                        w: { a: 1, k: widthKeyframes, ix: 5 },
                                         lc: lineCap,
                                         lj: 2,
                                         bm: 0,
