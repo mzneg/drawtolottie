@@ -1,0 +1,20 @@
+{
+  "name": "lottie-drawing-app",
+  "version": "1.0.0",
+  "description": "Draw and export animations as Lottie files with pressure sensitivity support",
+  "main": "index.html",
+  "scripts": {
+    "dev": "npx serve .",
+    "build": "echo 'No build step required'"
+  },
+  "keywords": [
+    "lottie",
+    "drawing",
+    "animation",
+    "svg",
+    "apple-pencil",
+    "pressure-sensitive"
+  ],
+  "author": "Mazen Ahmed",
+  "license": "MIT"
+}

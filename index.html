@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drawing to Lottie Animation</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #222;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .canvas-wrapper {
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 20px;
+            background: white;
+        }
+        
+        canvas {
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+        
+        button {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        button:hover {
+            transform: translateY(-1px);
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            background: #0056b3;
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        
+        .btn-secondary:hover {
+            background: #545b62;
+        }
+        
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        
+        .btn-success:hover {
+            background: #218838;
+        }
+        
+        .settings {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .setting-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        label {
+            font-size: 14px;
+            color: #555;
+        }
+        
+        input[type="color"],
+        input[type="range"],
+        input[type="number"] {
+            cursor: pointer;
+        }
+        
+        input[type="range"] {
+            width: 120px;
+        }
+        
+        input[type="number"] {
+            width: 80px;
+            padding: 6px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .status {
+            padding: 12px;
+            background: #e7f3ff;
+            border-left: 4px solid #007bff;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 14px;
+            display: none;
+        }
+        
+        .status.active {
+            display: block;
+        }
+        
+        .preview {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 2px solid #eee;
+        }
+        
+        .preview h2 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: #222;
+        }
+        
+        .preview-area {
+            border: 2px dashed #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 200px;
+            background: #fafafa;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        #lottiePreview {
+            max-width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Drawing to Lottie Animation</h1>
+        <p class="subtitle">Draw anything and export it as a Lottie file for Framer. Supports Apple Pencil and drawing tablet pressure.</p>
+        
+        <div class="settings">
+            <div class="setting-group">
+                <label>Color:</label>
+                <input type="color" id="strokeColor" value="#000000">
+            </div>
+            <div class="setting-group">
+                <label>Width:</label>
+                <input type="range" id="strokeWidth" min="1" max="20" value="3">
+                <span id="widthValue">3px</span>
+            </div>
+            <div class="setting-group">
+                <label>Speed:</label>
+                <input type="number" id="animationSpeed" min="0.1" max="5" step="0.1" value="1">
+                <span>x</span>
+            </div>
+            <div class="setting-group">
+                <label>Pressure:</label>
+                <span id="pressureValue" style="font-weight: 500; color: #007bff;">0%</span>
+            </div>
+        </div>
+        
+        <div class="canvas-wrapper">
+            <canvas id="drawingCanvas" width="800" height="500"></canvas>
+        </div>
+        
+        <div class="controls">
+            <button class="btn-primary" id="clearBtn">Clear Canvas</button>
+            <button class="btn-secondary" id="replayBtn">Replay Animation</button>
+            <button class="btn-success" id="exportBtn">Export Lottie JSON</button>
+        </div>
+        
+        <div class="status" id="status"></div>
+        
+        <div class="preview">
+            <h2>Preview Animation</h2>
+            <div class="preview-area" id="previewArea">
+                <p style="color: #999; text-align: center;">Your animation will appear here after export</p>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/lottie-web/5.12.2/lottie.min.js"></script>
+    <script>
+        const canvas = document.getElementById('drawingCanvas');
+        const ctx = canvas.getContext('2d');
+        const strokeColorInput = document.getElementById('strokeColor');
+        const strokeWidthInput = document.getElementById('strokeWidth');
+        const widthValueSpan = document.getElementById('widthValue');
+        const animationSpeedInput = document.getElementById('animationSpeed');
+        const pressureValueSpan = document.getElementById('pressureValue');
+        const clearBtn = document.getElementById('clearBtn');
+        const replayBtn = document.getElementById('replayBtn');
+        const exportBtn = document.getElementById('exportBtn');
+        const status = document.getElementById('status');
+        const previewArea = document.getElementById('previewArea');
+        
+        let isDrawing = false;
+        let strokes = [];
+        let currentStroke = [];
+        let startTime = 0;
+        let lottieInstance = null;
+        
+        // Update width display
+        strokeWidthInput.addEventListener('input', (e) => {
+            widthValueSpan.textContent = e.target.value + 'px';
+        });
+        
+        // Pointer events (supports mouse, touch, and stylus with pressure)
+        canvas.addEventListener('pointerdown', startDrawing);
+        canvas.addEventListener('pointermove', draw);
+        canvas.addEventListener('pointerup', stopDrawing);
+        canvas.addEventListener('pointerleave', stopDrawing);
+        canvas.addEventListener('pointercancel', stopDrawing);
+        
+        function getPointerPosition(e) {
+            const rect = canvas.getBoundingClientRect();
+            return {
+                x: e.clientX - rect.left,
+                y: e.clientY - rect.top,
+                pressure: e.pressure || 0.5
+            };
+        }
+        
+        function startDrawing(e) {
+            e.preventDefault();
+            isDrawing = true;
+            if (strokes.length === 0) {
+                startTime = Date.now();
+            }
+            
+            const pos = getPointerPosition(e);
+            const baseWidth = parseInt(strokeWidthInput.value);
+            
+            // Update pressure display
+            pressureValueSpan.textContent = Math.round(pos.pressure * 100) + '%';
+            
+            currentStroke = {
+                points: [],
+                color: strokeColorInput.value,
+                baseWidth: baseWidth,
+                startTime: Date.now() - startTime
+            };
+            
+            currentStroke.points.push({
+                x: pos.x,
+                y: pos.y,
+                pressure: pos.pressure,
+                time: Date.now() - startTime
+            });
+        }
+        
+        function draw(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+            
+            const pos = getPointerPosition(e);
+            const point = {
+                x: pos.x,
+                y: pos.y,
+                pressure: pos.pressure,
+                time: Date.now() - startTime
+            };
+            
+            // Update pressure display
+            pressureValueSpan.textContent = Math.round(pos.pressure * 100) + '%';
+            
+            currentStroke.points.push(point);
+            
+            // Draw with pressure-sensitive width
+            const prevPoint = currentStroke.points[currentStroke.points.length - 2];
+            const avgPressure = (prevPoint.pressure + point.pressure) / 2;
+            const lineWidth = currentStroke.baseWidth * avgPressure;
+            
+            ctx.strokeStyle = currentStroke.color;
+            ctx.lineWidth = lineWidth;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            
+            ctx.beginPath();
+            ctx.moveTo(prevPoint.x, prevPoint.y);
+            ctx.lineTo(point.x, point.y);
+            ctx.stroke();
+        }
+        
+        function stopDrawing(e) {
+            if (!isDrawing) return;
+            if (e) e.preventDefault();
+            isDrawing = false;
+            pressureValueSpan.textContent = '0%';
+            if (currentStroke.points.length > 0) {
+                strokes.push(currentStroke);
+            }
+        }
+        
+        // Clear canvas
+        clearBtn.addEventListener('click', () => {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            strokes = [];
+            startTime = 0;
+            pressureValueSpan.textContent = '0%';
+            showStatus('Canvas cleared');
+        });
+        
+        // Replay animation
+        replayBtn.addEventListener('click', () => {
+            if (strokes.length === 0) {
+                showStatus('Nothing to replay. Draw something first.');
+                return;
+            }
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            showStatus('Replaying animation...');
+            
+            const speed = parseFloat(animationSpeedInput.value);
+            let strokeIndex = 0;
+            let pointIndex = 0;
+            
+            function animate() {
+                if (strokeIndex >= strokes.length) {
+                    showStatus('Replay complete');
+                    return;
+                }
+                
+                const stroke = strokes[strokeIndex];
+                
+                if (pointIndex < stroke.points.length) {
+                    if (pointIndex > 0) {
+                        const prevPoint = stroke.points[pointIndex - 1];
+                        const currPoint = stroke.points[pointIndex];
+                        const avgPressure = (prevPoint.pressure + currPoint.pressure) / 2;
+                        const lineWidth = stroke.baseWidth * avgPressure;
+                        
+                        ctx.strokeStyle = stroke.color;
+                        ctx.lineWidth = lineWidth;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        
+                        ctx.beginPath();
+                        ctx.moveTo(prevPoint.x, prevPoint.y);
+                        ctx.lineTo(currPoint.x, currPoint.y);
+                        ctx.stroke();
+                    }
+                    
+                    pointIndex++;
+                    
+                    if (pointIndex < stroke.points.length) {
+                        const delay = (stroke.points[pointIndex].time - stroke.points[pointIndex - 1].time) / speed;
+                        setTimeout(animate, delay);
+                    } else {
+                        strokeIndex++;
+                        pointIndex = 0;
+                        setTimeout(animate, 50 / speed);
+                    }
+                }
+            }
+            
+            animate();
+        });
+        
+        // Export to Lottie
+        exportBtn.addEventListener('click', () => {
+            if (strokes.length === 0) {
+                showStatus('Nothing to export. Draw something first.');
+                return;
+            }
+            
+            const lottieData = generateLottieJSON();
+            downloadLottie(lottieData);
+            showPreview(lottieData);
+            showStatus('Lottie JSON exported successfully!');
+        });
+        
+        function hexToRgb(hex) {
+            const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return result ? {
+                r: parseInt(result[1], 16) / 255,
+                g: parseInt(result[2], 16) / 255,
+                b: parseInt(result[3], 16) / 255
+            } : { r: 0, g: 0, b: 0 };
+        }
+        
+        function generateLottieJSON() {
+            const speed = parseFloat(animationSpeedInput.value);
+            const fps = 60;
+            
+            // Calculate total duration
+            let maxTime = 0;
+            strokes.forEach(stroke => {
+                const lastPoint = stroke.points[stroke.points.length - 1];
+                if (lastPoint.time > maxTime) {
+                    maxTime = lastPoint.time;
+                }
+            });
+            
+            const totalDuration = (maxTime / 1000 / speed) * fps;
+            
+            const lottieJSON = {
+                v: "5.7.4",
+                fr: fps,
+                ip: 0,
+                op: totalDuration + 30,
+                w: canvas.width,
+                h: canvas.height,
+                nm: "Drawing Animation",
+                ddd: 0,
+                assets: [],
+                layers: []
+            };
+            
+            // Create one layer per stroke (simpler approach)
+            strokes.forEach((stroke, strokeIdx) => {
+                const rgb = hexToRgb(stroke.color);
+                const avgPressure = stroke.points.reduce((sum, p) => sum + p.pressure, 0) / stroke.points.length;
+                const strokeWidth = stroke.baseWidth * avgPressure;
+                
+                // Build path vertices
+                const vertices = stroke.points.map(p => [p.x, p.y]);
+                
+                const startFrame = (stroke.startTime / 1000 / speed) * fps;
+                const lastPoint = stroke.points[stroke.points.length - 1];
+                const endFrame = (lastPoint.time / 1000 / speed) * fps;
+                const duration = endFrame - startFrame;
+                
+                const layer = {
+                    ddd: 0,
+                    ind: strokeIdx + 1,
+                    ty: 4,
+                    nm: `Stroke ${strokeIdx + 1}`,
+                    sr: 1,
+                    ks: {
+                        o: { a: 0, k: 100, ix: 11 },
+                        r: { a: 0, k: 0, ix: 10 },
+                        p: { a: 0, k: [0, 0, 0], ix: 2 },
+                        a: { a: 0, k: [0, 0, 0], ix: 1 },
+                        s: { a: 0, k: [100, 100, 100], ix: 6 }
+                    },
+                    ao: 0,
+                    shapes: [
+                        {
+                            ty: "gr",
+                            it: [
+                                {
+                                    ind: 0,
+                                    ty: "sh",
+                                    ix: 1,
+                                    ks: {
+                                        a: 0,
+                                        k: {
+                                            i: vertices.map(() => [0, 0]),
+                                            o: vertices.map(() => [0, 0]),
+                                            v: vertices,
+                                            c: false
+                                        },
+                                        ix: 2
+                                    },
+                                    nm: "Path 1",
+                                    mn: "ADBE Vector Shape - Group",
+                                    hd: false
+                                },
+                                {
+                                    ty: "st",
+                                    c: { a: 0, k: [rgb.r, rgb.g, rgb.b, 1], ix: 3 },
+                                    o: { a: 0, k: 100, ix: 4 },
+                                    w: { a: 0, k: strokeWidth, ix: 5 },
+                                    lc: 2,
+                                    lj: 2,
+                                    bm: 0,
+                                    nm: "Stroke 1",
+                                    mn: "ADBE Vector Graphic - Stroke",
+                                    hd: false
+                                },
+                                {
+                                    ty: "tm",
+                                    s: { a: 0, k: 0, ix: 1 },
+                                    e: {
+                                        a: 1,
+                                        k: [
+                                            {
+                                                i: { x: [0.667], y: [1] },
+                                                o: { x: [0.333], y: [0] },
+                                                t: startFrame,
+                                                s: [0]
+                                            },
+                                            {
+                                                t: endFrame,
+                                                s: [100]
+                                            }
+                                        ],
+                                        ix: 2
+                                    },
+                                    o: { a: 0, k: 0, ix: 3 },
+                                    m: 1,
+                                    ix: 3,
+                                    nm: "Trim Paths 1",
+                                    mn: "ADBE Vector Filter - Trim",
+                                    hd: false
+                                },
+                                {
+                                    ty: "tr",
+                                    p: { a: 0, k: [0, 0], ix: 2 },
+                                    a: { a: 0, k: [0, 0], ix: 1 },
+                                    s: { a: 0, k: [100, 100], ix: 3 },
+                                    r: { a: 0, k: 0, ix: 6 },
+                                    o: { a: 0, k: 100, ix: 7 },
+                                    sk: { a: 0, k: 0, ix: 4 },
+                                    sa: { a: 0, k: 0, ix: 5 },
+                                    nm: "Transform"
+                                }
+                            ],
+                            nm: "Shape 1",
+                            np: 3,
+                            cix: 2,
+                            bm: 0,
+                            ix: 1,
+                            mn: "ADBE Vector Group",
+                            hd: false
+                        }
+                    ],
+                    ip: 0,
+                    op: totalDuration + 30,
+                    st: 0,
+                    bm: 0
+                };
+                
+                lottieJSON.layers.push(layer);
+            });
+            
+            return lottieJSON;
+        }
+        
+        function downloadLottie(lottieData) {
+            const jsonString = JSON.stringify(lottieData, null, 2);
+            const blob = new Blob([jsonString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `drawing-${Date.now()}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+        
+        function showPreview(lottieData) {
+            previewArea.innerHTML = '<div id="lottiePreview" style="width: 100%; max-width: 800px;"></div>';
+            
+            if (lottieInstance) {
+                lottieInstance.destroy();
+            }
+            
+            lottieInstance = lottie.loadAnimation({
+                container: document.getElementById('lottiePreview'),
+                renderer: 'svg',
+                loop: true,
+                autoplay: true,
+                animationData: lottieData
+            });
+        }
+        
+        function showStatus(message) {
+            status.textContent = message;
+            status.classList.add('active');
+            setTimeout(() => {
+                status.classList.remove('active');
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
