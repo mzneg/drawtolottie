@@ -1149,9 +1149,9 @@
                 // Native iPad apps don't simplify - they use all the data
                 const simplifiedPoints = stroke.points;
                 
-                // Use smooth stroked segments with pressure (simpler and more reliable)
-                const segmentSize = 6;
-                const stepSize = 3; // 50% overlap
+                // Use larger segments with less overlap for smoother appearance
+                const segmentSize = 12; // Larger segments = smoother curves
+                const stepSize = 6; // 50% overlap
                 
                 for (let i = 0; i < simplifiedPoints.length - 1; i += stepSize) {
                     const endIdx = Math.min(i + segmentSize, simplifiedPoints.length);
@@ -1237,7 +1237,7 @@
                                         s: {
                                             a: 1,
                                             k: [
-                                                { i: { x: [0.833], y: [0.833] }, o: { x: [0.167], y: [0.167] }, t: startFrame, s: [0] },
+                                                { i: easing.i, o: easing.o, t: startFrame, s: [0] },
                                                 { t: endFrame, s: [100] }
                                             ],
                                             ix: 1
