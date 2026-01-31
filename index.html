@@ -231,7 +231,6 @@
                 <label>Smoothing:</label>
                 <input type="range" id="smoothingStrength" min="0" max="100" value="50" style="width: 120px;">
                 <span id="smoothingValue">50%</span>
-                <button onclick="applySmoothingToAllStrokes()" class="btn-secondary" style="padding: 6px 12px; font-size: 13px;">Apply</button>
             </div>
         </div>
         
@@ -747,8 +746,12 @@
             isDrawing = false;
             pressureValueSpan.textContent = '0%';
             if (currentStroke.points.length > 0) {
+                // Apply intelligent smoothing automatically
+                currentStroke = applyAutoSmoothing(currentStroke);
                 strokes.push(currentStroke);
                 redoStack = []; // Clear redo history when new stroke is added
+                // Redraw to show smoothed stroke
+                redrawCanvas();
             }
         }
         
@@ -829,38 +832,110 @@
             });
         }
         
-        // Smooth stroke points using simplified path algorithm
+        // Intelligent smoothing that preserves shape while removing rigid lines
         function smoothStroke(points, strength) {
             if (points.length < 3) return points;
+            if (strength === 0) return points;
             
-            // Strength: 0 = no smoothing (keep all points), 100 = maximum smoothing (very few points)
-            // Convert to epsilon for Douglas-Peucker algorithm
-            const minPoints = 5;
-            const maxPoints = points.length;
-            const targetPoints = Math.max(minPoints, Math.floor(maxPoints * (1 - strength / 100)));
+            // Step 1: Simplify path using Ramer-Douglas-Peucker algorithm
+            const epsilon = (strength / 100) * 10; // Convert 0-100 to tolerance
+            const simplified = rdpSimplify(points, epsilon);
             
-            // Simple downsampling for smoothing
-            if (targetPoints >= points.length) return points;
-            
-            const step = points.length / targetPoints;
-            const smoothed = [];
-            
-            // Always keep first point
-            smoothed.push(points[0]);
-            
-            // Sample points evenly
-            for (let i = 1; i < targetPoints - 1; i++) {
-                const idx = Math.floor(i * step);
-                smoothed.push(points[idx]);
+            // Step 2: Apply Chaikin smoothing to create smooth curves
+            const iterations = Math.floor(strength / 25); // 0-4 iterations based on strength
+            let smoothed = simplified;
+            for (let i = 0; i < iterations; i++) {
+                smoothed = chaikinSmooth(smoothed);
             }
-            
-            // Always keep last point
-            smoothed.push(points[points.length - 1]);
             
             return smoothed;
         }
         
-        // Apply smoothing to all strokes
+        // Ramer-Douglas-Peucker algorithm - simplifies path while preserving shape
+        function rdpSimplify(points, epsilon) {
+            if (points.length < 3) return points;
+            
+            // Find point with maximum distance from line between start and end
+            let maxDist = 0;
+            let maxIndex = 0;
+            const start = points[0];
+            const end = points[points.length - 1];
+            
+            for (let i = 1; i < points.length - 1; i++) {
+                const dist = perpendicularDistance(points[i], start, end);
+                if (dist > maxDist) {
+                    maxDist = dist;
+                    maxIndex = i;
+                }
+            }
+            
+            // If max distance is greater than epsilon, recursively simplify
+            if (maxDist > epsilon) {
+                const left = rdpSimplify(points.slice(0, maxIndex + 1), epsilon);
+                const right = rdpSimplify(points.slice(maxIndex), epsilon);
+                return left.slice(0, -1).concat(right);
+            } else {
+                return [start, end];
+            }
+        }
+        
+        // Calculate perpendicular distance from point to line
+        function perpendicularDistance(point, lineStart, lineEnd) {
+            const dx = lineEnd.x - lineStart.x;
+            const dy = lineEnd.y - lineStart.y;
+            const mag = Math.sqrt(dx * dx + dy * dy);
+            if (mag === 0) return 0;
+            
+            const u = ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy) / (mag * mag);
+            const closestX = lineStart.x + u * dx;
+            const closestY = lineStart.y + u * dy;
+            
+            return Math.sqrt(Math.pow(point.x - closestX, 2) + Math.pow(point.y - closestY, 2));
+        }
+        
+        // Chaikin's corner cutting algorithm - creates smooth curves
+        function chaikinSmooth(points) {
+            if (points.length < 3) return points;
+            
+            const smoothed = [points[0]]; // Keep first point
+            
+            for (let i = 0; i < points.length - 1; i++) {
+                const p0 = points[i];
+                const p1 = points[i + 1];
+                
+                // Create two points 1/4 and 3/4 along the segment
+                const q = {
+                    x: 0.75 * p0.x + 0.25 * p1.x,
+                    y: 0.75 * p0.y + 0.25 * p1.y,
+                    pressure: p0.pressure,
+                    time: p0.time
+                };
+                
+                const r = {
+                    x: 0.25 * p0.x + 0.75 * p1.x,
+                    y: 0.25 * p0.y + 0.75 * p1.y,
+                    pressure: p1.pressure,
+                    time: p1.time
+                };
+                
+                smoothed.push(q);
+                smoothed.push(r);
+            }
+            
+            smoothed.push(points[points.length - 1]); // Keep last point
+            return smoothed;
+        }
+        
+        // Apply smoothing automatically when stroke ends
+        function applyAutoSmoothing(stroke) {
+            const strength = parseInt(smoothingStrength.value);
+            if (strength > 0) {
+                stroke.points = smoothStroke(stroke.points, strength);
+            }
+            return stroke;
+        }
+        
+        // Legacy function - no longer needed but keeping for compatibility
         function applySmoothingToAllStrokes() {
             const strength = parseInt(smoothingStrength.value);
             
@@ -869,16 +944,11 @@
                 return;
             }
             
-            // Apply smoothing to each stroke
             strokes.forEach(stroke => {
                 stroke.points = smoothStroke(stroke.points, strength);
             });
             
-            // Redraw canvas with smoothed strokes
             redrawCanvas();
-            
-            // Show feedback
-            console.log(`Applied ${strength}% smoothing to ${strokes.length} strokes`);
         }
         
         // Undo
