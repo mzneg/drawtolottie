@@ -1141,54 +1141,72 @@
                 // Native iPad apps don't simplify - they use all the data
                 const simplifiedPoints = stroke.points;
                 
-                // Use entire stroke as one continuous smooth path
+                // Convert stroke to filled shape with variable width
                 const segmentPoints = simplifiedPoints;
                 
                 if (segmentPoints.length < 2) return;
                 
-                // Create one smooth bezier path for entire stroke
-                const bezierPath = createSmoothBezierPath(segmentPoints);
+                // Create outline points for variable width
+                const leftEdge = [];
+                const rightEdge = [];
+                
+                for (let i = 0; i < segmentPoints.length; i++) {
+                    const p = segmentPoints[i];
+                    const width = stroke.baseWidth * p.pressure;
+                    const halfWidth = width / 2;
+                    
+                    // Calculate perpendicular direction
+                    let perpX, perpY;
+                    if (i === 0) {
+                        // First point - use direction to next
+                        const next = segmentPoints[i + 1];
+                        const dx = next.x - p.x;
+                        const dy = next.y - p.y;
+                        const len = Math.sqrt(dx * dx + dy * dy);
+                        perpX = -dy / len;
+                        perpY = dx / len;
+                    } else if (i === segmentPoints.length - 1) {
+                        // Last point - use direction from previous
+                        const prev = segmentPoints[i - 1];
+                        const dx = p.x - prev.x;
+                        const dy = p.y - prev.y;
+                        const len = Math.sqrt(dx * dx + dy * dy);
+                        perpX = -dy / len;
+                        perpY = dx / len;
+                    } else {
+                        // Middle points - average direction
+                        const prev = segmentPoints[i - 1];
+                        const next = segmentPoints[i + 1];
+                        const dx = next.x - prev.x;
+                        const dy = next.y - prev.y;
+                        const len = Math.sqrt(dx * dx + dy * dy);
+                        perpX = -dy / len;
+                        perpY = dx / len;
+                    }
+                    
+                    // Create left and right edge points
+                    leftEdge.push({
+                        x: p.x + perpX * halfWidth,
+                        y: p.y + perpY * halfWidth,
+                        pressure: 1 // Full pressure for outline
+                    });
+                    
+                    rightEdge.push({
+                        x: p.x - perpX * halfWidth,
+                        y: p.y - perpY * halfWidth,
+                        pressure: 1
+                    });
+                }
+                
+                // Create closed shape path: left edge forward + right edge backward
+                const shapePoints = [...leftEdge, ...rightEdge.reverse()];
+                const bezierPath = createSmoothBezierPath(shapePoints);
+                bezierPath.c = true; // Close the path
                 
                 const startTime = segmentPoints[0].time;
                 const endTime = segmentPoints[segmentPoints.length - 1].time;
                 const startFrame = (startTime / 1000 / speed) * fps;
                 const endFrame = (endTime / 1000 / speed) * fps;
-                
-                // Create animated stroke width keyframes for pressure sensitivity
-                const widthKeyframes = [];
-                const totalDuration = endTime - startTime;
-                
-                // Sample pressure at regular intervals for smooth animation
-                const sampleCount = Math.min(segmentPoints.length, 50); // Max 50 keyframes
-                const step = Math.max(1, Math.floor(segmentPoints.length / sampleCount));
-                
-                for (let i = 0; i < segmentPoints.length; i += step) {
-                    const p = segmentPoints[i];
-                    const t = p.time - startTime;
-                    const frame = startFrame + (t / 1000 / speed) * fps;
-                    const width = stroke.baseWidth * p.pressure;
-                    
-                    widthKeyframes.push({
-                        i: { x: [0.833], y: [0.833] },
-                        o: { x: [0.167], y: [0.167] },
-                        t: frame,
-                        s: [width]
-                    });
-                }
-                
-                // Add last point
-                const lastPoint = segmentPoints[segmentPoints.length - 1];
-                const lastWidth = stroke.baseWidth * lastPoint.pressure;
-                widthKeyframes.push({
-                    t: endFrame,
-                    s: [lastWidth]
-                });
-                
-                // Line cap based on brush
-                let lineCap = 2; // round
-                if (stroke.brushType === 'marker' || stroke.brushType === 'pencil' || stroke.brushType === 'calligraphy') {
-                    lineCap = 1; // butt
-                }
                 
                 // Opacity based on brush
                 let opacity = 100;
@@ -1205,7 +1223,14 @@
                     nm: `Stroke ${strokeIdx + 1}`,
                     sr: 1,
                     ks: {
-                        o: { a: 0, k: opacity, ix: 11 },
+                        o: {
+                            a: 1,
+                            k: [
+                                { t: startFrame, s: [0] },
+                                { t: startFrame + 1, s: [opacity] }
+                            ],
+                            ix: 11
+                        },
                         r: { a: 0, k: 0, ix: 10 },
                         p: { a: 0, k: [0, 0, 0], ix: 2 },
                         a: { a: 0, k: [0, 0, 0], ix: 1 },
@@ -1230,45 +1255,17 @@
                                         hd: false
                                     },
                                     {
-                                        ty: "st",
+                                        ty: "fl",
                                         c: {
                                             a: 0,
                                             k: [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1],
-                                            ix: 3
+                                            ix: 4
                                         },
-                                        o: { a: 0, k: 100, ix: 4 },
-                                        w: { a: 1, k: widthKeyframes, ix: 5 },
-                                        lc: lineCap,
-                                        lj: 2,
+                                        o: { a: 0, k: 100, ix: 5 },
+                                        r: 1,
                                         bm: 0,
-                                        nm: "Stroke 1",
-                                        mn: "ADBE Vector Graphic - Stroke",
-                                        hd: false
-                                    },
-                                    {
-                                        ty: "tm",
-                                        s: { a: 0, k: 0, ix: 1 },
-                                        e: {
-                                            a: 1,
-                                            k: [
-                                                {
-                                                    i: easing.i,
-                                                    o: easing.o,
-                                                    t: startFrame,
-                                                    s: [0]
-                                                },
-                                                {
-                                                    t: endFrame,
-                                                    s: [100]
-                                                }
-                                            ],
-                                            ix: 2
-                                        },
-                                        o: { a: 0, k: 0, ix: 3 },
-                                        m: 1,
-                                        ix: 3,
-                                        nm: "Trim Paths 1",
-                                        mn: "ADBE Vector Filter - Trim",
+                                        nm: "Fill 1",
+                                        mn: "ADBE Vector Graphic - Fill",
                                         hd: false
                                     },
                                     {
