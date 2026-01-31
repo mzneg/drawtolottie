@@ -1316,61 +1316,82 @@
                 const rgb = hexToRgb(stroke.color);
                 const easing = getEasingValues(easingType);
                 
-                // Keep all points to preserve pressure sensitivity
-                // Native iPad apps don't simplify - they use all the data
-                const simplifiedPoints = stroke.points;
+                // Points are already smoothed - use entire stroke as one path
+                const strokePoints = stroke.points;
                 
-                // Use larger segments with less overlap for smoother appearance
-                const segmentSize = 12; // Larger segments = smoother curves
-                const stepSize = 6; // 50% overlap
+                if (strokePoints.length < 2) return;
                 
-                for (let i = 0; i < simplifiedPoints.length - 1; i += stepSize) {
-                    const endIdx = Math.min(i + segmentSize, simplifiedPoints.length);
-                    const segmentPoints = simplifiedPoints.slice(i, endIdx);
+                // Create smooth bezier path for entire stroke
+                const bezierPath = createSmoothBezierPath(strokePoints);
+                
+                const startTime = strokePoints[0].time;
+                const endTime = strokePoints[strokePoints.length - 1].time;
+                const startFrame = (startTime / 1000 / speed) * fps;
+                const endFrame = (endTime / 1000 / speed) * fps;
+                
+                // Create animated width keyframes for pressure
+                const widthKeyframes = [];
+                const sampleRate = Math.max(1, Math.floor(strokePoints.length / 30)); // Max 30 keyframes
+                
+                for (let i = 0; i < strokePoints.length; i += sampleRate) {
+                    const p = strokePoints[i];
+                    const t = p.time - startTime;
+                    const frame = startFrame + (t / 1000 / speed) * fps;
+                    const width = stroke.baseWidth * p.pressure;
                     
-                    if (segmentPoints.length < 2) continue;
-                    
-                    // Average pressure for segment
-                    const avgPressure = segmentPoints.reduce((sum, p) => sum + p.pressure, 0) / segmentPoints.length;
-                    const segmentWidth = stroke.baseWidth * avgPressure;
-                    
-                    // Create smooth bezier path
-                    const bezierPath = createSmoothBezierPath(segmentPoints);
-                    
-                    const startTime = segmentPoints[0].time;
-                    const endTime = segmentPoints[segmentPoints.length - 1].time;
-                    const startFrame = (startTime / 1000 / speed) * fps;
-                    const endFrame = (endTime / 1000 / speed) * fps;
-                    
-                    // Line cap
-                    let lineCap = 2; // round
-                    if (stroke.brushType === 'marker' || stroke.brushType === 'pencil' || stroke.brushType === 'calligraphy') {
-                        lineCap = 1;
+                    if (i === 0) {
+                        widthKeyframes.push({
+                            i: { x: [0.667], y: [1] },
+                            o: { x: [0.333], y: [0] },
+                            t: frame,
+                            s: [width]
+                        });
+                    } else {
+                        widthKeyframes.push({
+                            i: { x: [0.667], y: [1] },
+                            o: { x: [0.333], y: [0] },
+                            t: frame,
+                            s: [width]
+                        });
                     }
-                    
-                    // Opacity
-                    let opacity = 100;
-                    if (stroke.brushType === 'marker') {
-                        opacity = 60;
-                    } else if (stroke.brushType === 'pencil') {
-                        opacity = 70;
-                    }
-                    
-                    const layer = {
-                        ddd: 0,
-                        ind: layerIndex + 1,
-                        ty: 4,
-                        nm: `Stroke ${strokeIdx + 1} Seg ${Math.floor(i / stepSize)}`,
-                        sr: 1,
-                        ks: {
-                            o: { a: 0, k: opacity, ix: 11 },
-                            r: { a: 0, k: 0, ix: 10 },
-                            p: { a: 0, k: [0, 0, 0], ix: 2 },
-                            a: { a: 0, k: [0, 0, 0], ix: 1 },
-                            s: { a: 0, k: [100, 100, 100], ix: 6 }
-                        },
-                        ao: 0,
-                        shapes: [
+                }
+                
+                // Add last point
+                const lastPoint = strokePoints[strokePoints.length - 1];
+                widthKeyframes.push({
+                    t: endFrame,
+                    s: [stroke.baseWidth * lastPoint.pressure]
+                });
+                
+                // Line cap
+                let lineCap = 2; // round
+                if (stroke.brushType === 'marker' || stroke.brushType === 'pencil' || stroke.brushType === 'calligraphy') {
+                    lineCap = 2; // Keep round for smoother appearance
+                }
+                
+                // Opacity
+                let opacity = 100;
+                if (stroke.brushType === 'marker') {
+                    opacity = 60;
+                } else if (stroke.brushType === 'pencil') {
+                    opacity = 70;
+                }
+                
+                const layer = {
+                    ddd: 0,
+                    ind: layerIndex + 1,
+                    ty: 4,
+                    nm: `Stroke ${strokeIdx + 1}`,
+                    sr: 1,
+                    ks: {
+                        o: { a: 0, k: opacity, ix: 11 },
+                        r: { a: 0, k: 0, ix: 10 },
+                        p: { a: 0, k: [0, 0, 0], ix: 2 },
+                        a: { a: 0, k: [0, 0, 0], ix: 1 },
+                        s: { a: 0, k: [100, 100, 100], ix: 6 }
+                    },
+                    ao: 0,
+                    shapes: [
                             {
                                 ty: "gr",
                                 it: [
@@ -1395,7 +1416,7 @@
                                             ix: 3
                                         },
                                         o: { a: 0, k: 100, ix: 4 },
-                                        w: { a: 0, k: segmentWidth, ix: 5 },
+                                        w: { a: 1, k: widthKeyframes, ix: 5 },
                                         lc: lineCap,
                                         lj: 2,
                                         bm: 0,
@@ -1448,9 +1469,8 @@
                         bm: 0
                     };
                 
-                    lottieJSON.layers.push(layer);
-                    layerIndex++;
-                }
+                lottieJSON.layers.push(layer);
+                layerIndex++;
             });
             
             return lottieJSON;
