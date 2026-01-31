@@ -223,6 +223,10 @@
                 <input type="checkbox" id="pencilOnlyMode" style="cursor: pointer;">
                 <label for="pencilOnlyMode" style="cursor: pointer;">Apple Pencil Only</label>
             </div>
+            <div class="setting-group">
+                <input type="checkbox" id="pressureSensitivity" checked style="cursor: pointer;">
+                <label for="pressureSensitivity" style="cursor: pointer;">Pressure Sensitivity</label>
+            </div>
         </div>
         
         <div class="settings">
@@ -332,6 +336,7 @@
         const animationSpeedInput = document.getElementById('animationSpeed');
         const pressureValueSpan = document.getElementById('pressureValue');
         const pencilOnlyMode = document.getElementById('pencilOnlyMode');
+        const pressureSensitivity = document.getElementById('pressureSensitivity');
         const easingTypeInput = document.getElementById('easingType');
         const loopTypeInput = document.getElementById('loopType');
         const customCurveControls = document.getElementById('customCurveControls');
@@ -594,10 +599,13 @@
         
         function getPointerPosition(e) {
             const rect = canvas.getBoundingClientRect();
+            const rawPressure = e.pressure || 0.5;
+            // If pressure sensitivity is off, use maximum pressure (1.0)
+            const pressure = pressureSensitivity.checked ? rawPressure : 1.0;
             return {
                 x: e.clientX - rect.left,
                 y: e.clientY - rect.top,
-                pressure: e.pressure || 0.5
+                pressure: pressure
             };
         }
         
@@ -1141,10 +1149,9 @@
                 // Native iPad apps don't simplify - they use all the data
                 const simplifiedPoints = stroke.points;
                 
-                // Create many small filled shape segments with overlap
-                // This gives us both smoothness AND pressure sensitivity
-                const segmentSize = 8; // Points per segment
-                const stepSize = 2; // Heavy overlap (75%)
+                // Use smooth stroked segments with pressure (simpler and more reliable)
+                const segmentSize = 6;
+                const stepSize = 3; // 50% overlap
                 
                 for (let i = 0; i < simplifiedPoints.length - 1; i += stepSize) {
                     const endIdx = Math.min(i + segmentSize, simplifiedPoints.length);
@@ -1152,70 +1159,25 @@
                     
                     if (segmentPoints.length < 2) continue;
                     
-                    // Create variable-width outline for this segment
-                    const leftEdge = [];
-                    const rightEdge = [];
+                    // Average pressure for segment
+                    const avgPressure = segmentPoints.reduce((sum, p) => sum + p.pressure, 0) / segmentPoints.length;
+                    const segmentWidth = stroke.baseWidth * avgPressure;
                     
-                    for (let j = 0; j < segmentPoints.length; j++) {
-                        const p = segmentPoints[j];
-                        const width = stroke.baseWidth * p.pressure;
-                        const halfWidth = width / 2;
-                        
-                        // Calculate perpendicular direction
-                        let perpX, perpY;
-                        if (j === 0 && i === 0) {
-                            // Very first point
-                            const next = segmentPoints[j + 1];
-                            const dx = next.x - p.x;
-                            const dy = next.y - p.y;
-                            const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                            perpX = -dy / len;
-                            perpY = dx / len;
-                        } else if (j === segmentPoints.length - 1 && endIdx === simplifiedPoints.length) {
-                            // Very last point
-                            const prev = segmentPoints[j - 1];
-                            const dx = p.x - prev.x;
-                            const dy = p.y - prev.y;
-                            const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                            perpX = -dy / len;
-                            perpY = dx / len;
-                        } else {
-                            // Middle points - use smooth average
-                            const prevIdx = Math.max(0, i + j - 1);
-                            const nextIdx = Math.min(simplifiedPoints.length - 1, i + j + 1);
-                            const prev = simplifiedPoints[prevIdx];
-                            const next = simplifiedPoints[nextIdx];
-                            const dx = next.x - prev.x;
-                            const dy = next.y - prev.y;
-                            const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                            perpX = -dy / len;
-                            perpY = dx / len;
-                        }
-                        
-                        leftEdge.push({
-                            x: p.x + perpX * halfWidth,
-                            y: p.y + perpY * halfWidth,
-                            pressure: 1
-                        });
-                        
-                        rightEdge.push({
-                            x: p.x - perpX * halfWidth,
-                            y: p.y - perpY * halfWidth,
-                            pressure: 1
-                        });
-                    }
-                    
-                    // Create closed shape
-                    const shapePoints = [...leftEdge, ...rightEdge.reverse()];
-                    const bezierPath = createSmoothBezierPath(shapePoints);
-                    bezierPath.c = true;
+                    // Create smooth bezier path
+                    const bezierPath = createSmoothBezierPath(segmentPoints);
                     
                     const startTime = segmentPoints[0].time;
                     const endTime = segmentPoints[segmentPoints.length - 1].time;
                     const startFrame = (startTime / 1000 / speed) * fps;
                     const endFrame = (endTime / 1000 / speed) * fps;
                     
-                    // Opacity based on brush
+                    // Line cap
+                    let lineCap = 2; // round
+                    if (stroke.brushType === 'marker' || stroke.brushType === 'pencil' || stroke.brushType === 'calligraphy') {
+                        lineCap = 1;
+                    }
+                    
+                    // Opacity
                     let opacity = 100;
                     if (stroke.brushType === 'marker') {
                         opacity = 60;
@@ -1230,14 +1192,7 @@
                         nm: `Stroke ${strokeIdx + 1} Seg ${Math.floor(i / stepSize)}`,
                         sr: 1,
                         ks: {
-                            o: {
-                                a: 1,
-                                k: [
-                                    { t: startFrame, s: [0] },
-                                    { t: startFrame + 1, s: [opacity] }
-                                ],
-                                ix: 11
-                            },
+                            o: { a: 0, k: opacity, ix: 11 },
                             r: { a: 0, k: 0, ix: 10 },
                             p: { a: 0, k: [0, 0, 0], ix: 2 },
                             a: { a: 0, k: [0, 0, 0], ix: 1 },
@@ -1262,17 +1217,37 @@
                                         hd: false
                                     },
                                     {
-                                        ty: "fl",
+                                        ty: "st",
                                         c: {
                                             a: 0,
                                             k: [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1],
-                                            ix: 4
+                                            ix: 3
                                         },
-                                        o: { a: 0, k: 100, ix: 5 },
-                                        r: 1,
+                                        o: { a: 0, k: 100, ix: 4 },
+                                        w: { a: 0, k: segmentWidth, ix: 5 },
+                                        lc: lineCap,
+                                        lj: 2,
                                         bm: 0,
-                                        nm: "Fill 1",
-                                        mn: "ADBE Vector Graphic - Fill",
+                                        nm: "Stroke 1",
+                                        mn: "ADBE Vector Graphic - Stroke",
+                                        hd: false
+                                    },
+                                    {
+                                        ty: "tm",
+                                        s: {
+                                            a: 1,
+                                            k: [
+                                                { i: { x: [0.833], y: [0.833] }, o: { x: [0.167], y: [0.167] }, t: startFrame, s: [0] },
+                                                { t: endFrame, s: [100] }
+                                            ],
+                                            ix: 1
+                                        },
+                                        e: { a: 0, k: 100, ix: 2 },
+                                        o: { a: 0, k: 0, ix: 3 },
+                                        m: 1,
+                                        ix: 3,
+                                        nm: "Trim Paths 1",
+                                        mn: "ADBE Vector Filter - Trim",
                                         hd: false
                                     },
                                     {
