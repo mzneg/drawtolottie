@@ -1137,9 +1137,9 @@
                 const rgb = hexToRgb(stroke.color);
                 const easing = getEasingValues(easingType);
                 
-                // Reduce points for smoother curves (every nth point)
+                // Use more points for smoother curves
                 const simplifiedPoints = [];
-                const step = Math.max(1, Math.floor(stroke.points.length / 20)); // Max 20 points per stroke
+                const step = Math.max(1, Math.floor(stroke.points.length / 50)); // Max 50 points per stroke
                 for (let i = 0; i < stroke.points.length; i += step) {
                     simplifiedPoints.push(stroke.points[i]);
                 }
@@ -1287,7 +1287,7 @@
             return lottieJSON;
         }
         
-        // Convert quadratic curve points to cubic bezier for Lottie
+        // Convert our quadratic curve drawing to Lottie cubic bezier
         function createSmoothBezierPath(points) {
             if (points.length < 2) {
                 return {
@@ -1311,60 +1311,78 @@
             const inTangents = [];
             const outTangents = [];
             
-            // First vertex is first point
+            // Add first point
             vertices.push([points[0].x, points[0].y]);
             inTangents.push([0, 0]);
             
-            // First segment is straight line to first midpoint
-            const firstMidX = (points[0].x + points[1].x) / 2;
-            const firstMidY = (points[0].y + points[1].y) / 2;
+            // Calculate out tangent for first point (toward first midpoint)
+            const firstMid = [(points[0].x + points[1].x) / 2, (points[0].y + points[1].y) / 2];
             outTangents.push([
-                (firstMidX - points[0].x) / 3,
-                (firstMidY - points[0].y) / 3
+                (firstMid[0] - points[0].x) / 3,
+                (firstMid[1] - points[0].y) / 3
             ]);
             
-            // Add midpoint vertices with proper quadratic-to-cubic conversion
+            // Process each quadratic curve segment
             for (let i = 1; i < points.length - 1; i++) {
                 const p0 = points[i - 1];
-                const p1 = points[i]; // Control point
+                const p1 = points[i];     // This is our control point
                 const p2 = points[i + 1];
                 
-                // Start of curve (midpoint between p0 and p1)
-                const startX = (p0.x + p1.x) / 2;
-                const startY = (p0.y + p1.y) / 2;
+                // Start and end of this curve segment
+                const startMid = [(p0.x + p1.x) / 2, (p0.y + p1.y) / 2];
+                const endMid = [(p1.x + p2.x) / 2, (p1.y + p2.y) / 2];
                 
-                // End of curve (midpoint between p1 and p2)
-                const endX = (p1.x + p2.x) / 2;
-                const endY = (p1.y + p2.y) / 2;
+                // Add endMid as vertex
+                vertices.push([endMid[0], endMid[1]]);
                 
-                // Add end vertex
-                vertices.push([endX, endY]);
+                // Convert quadratic to cubic bezier control points
+                // For quadratic with control point p1, going from startMid to endMid:
+                // Cubic CP1 = startMid + 2/3 * (p1 - startMid)
+                // Cubic CP2 = endMid + 2/3 * (p1 - endMid)
                 
-                // Quadratic to cubic bezier conversion
-                // CP1 = start + 2/3 * (control - start)
-                // CP2 = end + 2/3 * (control - end)
+                const cp1 = [
+                    startMid[0] + (2/3) * (p1.x - startMid[0]),
+                    startMid[1] + (2/3) * (p1.y - startMid[1])
+                ];
                 
-                // In tangent (from previous vertex which is startX, startY or close to it)
-                const cp2x = endX + (2/3) * (p1.x - endX);
-                const cp2y = endY + (2/3) * (p1.y - endY);
-                inTangents.push([cp2x - endX, cp2y - endY]);
+                const cp2 = [
+                    endMid[0] + (2/3) * (p1.x - endMid[0]),
+                    endMid[1] + (2/3) * (p1.y - endMid[1])
+                ];
                 
-                // Out tangent (to next vertex)
-                const cp1x = endX + (2/3) * (p1.x - endX);
-                const cp1y = endY + (2/3) * (p1.y - endY);
-                outTangents.push([cp1x - endX, cp1y - endY]);
+                // In tangent (relative to endMid vertex)
+                inTangents.push([cp2[0] - endMid[0], cp2[1] - endMid[1]]);
+                
+                // Out tangent (relative to endMid vertex, for next segment)
+                outTangents.push([cp2[0] - endMid[0], cp2[1] - endMid[1]]);
             }
             
-            // Last vertex is last point
-            const last = points[points.length - 1];
-            const secondLast = points[points.length - 2];
-            const lastMidX = (secondLast.x + last.x) / 2;
-            const lastMidY = (secondLast.y + last.y) / 2;
+            // Fix: Update the out tangent of the previous vertex to be correct CP1
+            for (let i = 1; i < vertices.length - 1; i++) {
+                const prevVertex = vertices[i - 1];
+                const currVertex = vertices[i];
+                
+                // Get the control point for this segment
+                const p1 = points[i];
+                
+                // CP1 relative to previous vertex
+                const cp1 = [
+                    prevVertex[0] + (2/3) * (p1.x - prevVertex[0]),
+                    prevVertex[1] + (2/3) * (p1.y - prevVertex[1])
+                ];
+                
+                outTangents[i - 1] = [cp1[0] - prevVertex[0], cp1[1] - prevVertex[1]];
+            }
             
+            // Add last point
+            const last = points[points.length - 1];
             vertices.push([last.x, last.y]);
+            
+            const lastP = points[points.length - 2];
+            const lastMid = [(lastP.x + last.x) / 2, (lastP.y + last.y) / 2];
             inTangents.push([
-                (lastMidX - last.x) / 3,
-                (lastMidY - last.y) / 3
+                (lastMid[0] - last.x) / 3,
+                (lastMid[1] - last.y) / 3
             ]);
             outTangents.push([0, 0]);
             
