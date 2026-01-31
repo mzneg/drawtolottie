@@ -227,6 +227,12 @@
                 <input type="checkbox" id="pressureSensitivity" checked style="cursor: pointer;">
                 <label for="pressureSensitivity" style="cursor: pointer;">Pressure Sensitivity</label>
             </div>
+            <div class="setting-group">
+                <label>Smoothing:</label>
+                <input type="range" id="smoothingStrength" min="0" max="100" value="50" style="width: 120px;">
+                <span id="smoothingValue">50%</span>
+                <button onclick="applySmoothingToAllStrokes()" class="btn-secondary" style="padding: 6px 12px; font-size: 13px;">Apply</button>
+            </div>
         </div>
         
         <div class="settings">
@@ -337,6 +343,8 @@
         const pressureValueSpan = document.getElementById('pressureValue');
         const pencilOnlyMode = document.getElementById('pencilOnlyMode');
         const pressureSensitivity = document.getElementById('pressureSensitivity');
+        const smoothingStrength = document.getElementById('smoothingStrength');
+        const smoothingValue = document.getElementById('smoothingValue');
         const easingTypeInput = document.getElementById('easingType');
         const loopTypeInput = document.getElementById('loopType');
         const customCurveControls = document.getElementById('customCurveControls');
@@ -590,6 +598,10 @@
             widthValueSpan.textContent = e.target.value + 'px';
         });
         
+        smoothingStrength.addEventListener('input', (e) => {
+            smoothingValue.textContent = e.target.value + '%';
+        });
+        
         // Pointer events (supports mouse, touch, and stylus with pressure)
         canvas.addEventListener('pointerdown', startDrawing);
         canvas.addEventListener('pointermove', draw);
@@ -815,6 +827,58 @@
                 
                 ctx.globalAlpha = 1.0;
             });
+        }
+        
+        // Smooth stroke points using simplified path algorithm
+        function smoothStroke(points, strength) {
+            if (points.length < 3) return points;
+            
+            // Strength: 0 = no smoothing (keep all points), 100 = maximum smoothing (very few points)
+            // Convert to epsilon for Douglas-Peucker algorithm
+            const minPoints = 5;
+            const maxPoints = points.length;
+            const targetPoints = Math.max(minPoints, Math.floor(maxPoints * (1 - strength / 100)));
+            
+            // Simple downsampling for smoothing
+            if (targetPoints >= points.length) return points;
+            
+            const step = points.length / targetPoints;
+            const smoothed = [];
+            
+            // Always keep first point
+            smoothed.push(points[0]);
+            
+            // Sample points evenly
+            for (let i = 1; i < targetPoints - 1; i++) {
+                const idx = Math.floor(i * step);
+                smoothed.push(points[idx]);
+            }
+            
+            // Always keep last point
+            smoothed.push(points[points.length - 1]);
+            
+            return smoothed;
+        }
+        
+        // Apply smoothing to all strokes
+        function applySmoothingToAllStrokes() {
+            const strength = parseInt(smoothingStrength.value);
+            
+            if (strokes.length === 0) {
+                alert('No strokes to smooth!');
+                return;
+            }
+            
+            // Apply smoothing to each stroke
+            strokes.forEach(stroke => {
+                stroke.points = smoothStroke(stroke.points, strength);
+            });
+            
+            // Redraw canvas with smoothed strokes
+            redrawCanvas();
+            
+            // Show feedback
+            console.log(`Applied ${strength}% smoothing to ${strokes.length} strokes`);
         }
         
         // Undo
