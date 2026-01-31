@@ -15,6 +15,11 @@
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
             background: #f5f5f5;
             padding: 20px;
+            -webkit-user-select: none;
+            -moz-user-select: none;
+            -ms-user-select: none;
+            user-select: none;
+            -webkit-touch-callout: none;
         }
         
         .container {
@@ -188,6 +193,7 @@
                 <label>Brush:</label>
                 <select id="brushType" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">
                     <option value="solid">Solid</option>
+                    <option value="flow">Flow (Smooth)</option>
                     <option value="marker">Marker</option>
                     <option value="spray">Spray</option>
                     <option value="pencil">Pencil</option>
@@ -659,20 +665,43 @@
             
             ctx.strokeStyle = currentStroke.color;
             ctx.fillStyle = currentStroke.color;
-            ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             
             const brushType = currentStroke.brushType;
             
             if (brushType === 'solid') {
                 ctx.lineWidth = lineWidth;
+                ctx.lineCap = 'round';
                 ctx.beginPath();
                 ctx.moveTo(prevPoint.x, prevPoint.y);
                 ctx.lineTo(point.x, point.y);
                 ctx.stroke();
+            } else if (brushType === 'flow') {
+                // Smooth flow brush using quadratic curves
+                ctx.lineWidth = lineWidth;
+                ctx.lineCap = 'round';
+                
+                if (currentStroke.points.length > 2) {
+                    const prevPrevPoint = currentStroke.points[currentStroke.points.length - 3];
+                    const midX = (prevPrevPoint.x + prevPoint.x) / 2;
+                    const midY = (prevPrevPoint.y + prevPoint.y) / 2;
+                    const midX2 = (prevPoint.x + point.x) / 2;
+                    const midY2 = (prevPoint.y + point.y) / 2;
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(midX, midY);
+                    ctx.quadraticCurveTo(prevPoint.x, prevPoint.y, midX2, midY2);
+                    ctx.stroke();
+                } else {
+                    ctx.beginPath();
+                    ctx.moveTo(prevPoint.x, prevPoint.y);
+                    ctx.lineTo(point.x, point.y);
+                    ctx.stroke();
+                }
             } else if (brushType === 'marker') {
                 // Marker has a flat, chisel-like edge
                 ctx.lineWidth = lineWidth;
+                ctx.lineCap = 'butt';
                 ctx.globalAlpha = 0.6;
                 ctx.beginPath();
                 ctx.moveTo(prevPoint.x, prevPoint.y);
@@ -702,6 +731,7 @@
             } else if (brushType === 'pencil') {
                 // Pencil creates a textured line
                 ctx.lineWidth = lineWidth;
+                ctx.lineCap = 'butt';
                 ctx.globalAlpha = 0.7;
                 
                 // Draw main line
@@ -728,6 +758,7 @@
                 const widthMultiplier = Math.abs(Math.cos(angle - calligraphyAngle)) * 0.7 + 0.3;
                 
                 ctx.lineWidth = lineWidth * widthMultiplier;
+                ctx.lineCap = 'butt';
                 ctx.beginPath();
                 ctx.moveTo(prevPoint.x, prevPoint.y);
                 ctx.lineTo(point.x, point.y);
@@ -769,19 +800,41 @@
                     
                     ctx.strokeStyle = stroke.color;
                     ctx.fillStyle = stroke.color;
-                    ctx.lineCap = 'round';
                     ctx.lineJoin = 'round';
                     
                     const brushType = stroke.brushType;
                     
                     if (brushType === 'solid') {
                         ctx.lineWidth = lineWidth;
+                        ctx.lineCap = 'round';
                         ctx.beginPath();
                         ctx.moveTo(prevPoint.x, prevPoint.y);
                         ctx.lineTo(currPoint.x, currPoint.y);
                         ctx.stroke();
+                    } else if (brushType === 'flow') {
+                        ctx.lineWidth = lineWidth;
+                        ctx.lineCap = 'round';
+                        
+                        if (i > 1) {
+                            const prevPrevPoint = stroke.points[i - 2];
+                            const midX = (prevPrevPoint.x + prevPoint.x) / 2;
+                            const midY = (prevPrevPoint.y + prevPoint.y) / 2;
+                            const midX2 = (prevPoint.x + currPoint.x) / 2;
+                            const midY2 = (prevPoint.y + currPoint.y) / 2;
+                            
+                            ctx.beginPath();
+                            ctx.moveTo(midX, midY);
+                            ctx.quadraticCurveTo(prevPoint.x, prevPoint.y, midX2, midY2);
+                            ctx.stroke();
+                        } else {
+                            ctx.beginPath();
+                            ctx.moveTo(prevPoint.x, prevPoint.y);
+                            ctx.lineTo(currPoint.x, currPoint.y);
+                            ctx.stroke();
+                        }
                     } else if (brushType === 'marker') {
                         ctx.lineWidth = lineWidth;
+                        ctx.lineCap = 'butt';
                         ctx.globalAlpha = 0.6;
                         ctx.beginPath();
                         ctx.moveTo(prevPoint.x, prevPoint.y);
@@ -809,6 +862,7 @@
                         ctx.globalAlpha = 1.0;
                     } else if (brushType === 'pencil') {
                         ctx.lineWidth = lineWidth;
+                        ctx.lineCap = 'butt';
                         ctx.globalAlpha = 0.7;
                         ctx.beginPath();
                         ctx.moveTo(prevPoint.x, prevPoint.y);
@@ -831,6 +885,7 @@
                         const widthMultiplier = Math.abs(Math.cos(angle - calligraphyAngle)) * 0.7 + 0.3;
                         
                         ctx.lineWidth = lineWidth * widthMultiplier;
+                        ctx.lineCap = 'butt';
                         ctx.beginPath();
                         ctx.moveTo(prevPoint.x, prevPoint.y);
                         ctx.lineTo(currPoint.x, currPoint.y);
@@ -939,19 +994,41 @@
                         
                         ctx.strokeStyle = stroke.color;
                         ctx.fillStyle = stroke.color;
-                        ctx.lineCap = 'round';
                         ctx.lineJoin = 'round';
                         
                         const brushType = stroke.brushType;
                         
                         if (brushType === 'solid') {
                             ctx.lineWidth = lineWidth;
+                            ctx.lineCap = 'round';
                             ctx.beginPath();
                             ctx.moveTo(prevPoint.x, prevPoint.y);
                             ctx.lineTo(currPoint.x, currPoint.y);
                             ctx.stroke();
+                        } else if (brushType === 'flow') {
+                            ctx.lineWidth = lineWidth;
+                            ctx.lineCap = 'round';
+                            
+                            if (pointIndex > 1) {
+                                const prevPrevPoint = stroke.points[pointIndex - 2];
+                                const midX = (prevPrevPoint.x + prevPoint.x) / 2;
+                                const midY = (prevPrevPoint.y + prevPoint.y) / 2;
+                                const midX2 = (prevPoint.x + currPoint.x) / 2;
+                                const midY2 = (prevPoint.y + currPoint.y) / 2;
+                                
+                                ctx.beginPath();
+                                ctx.moveTo(midX, midY);
+                                ctx.quadraticCurveTo(prevPoint.x, prevPoint.y, midX2, midY2);
+                                ctx.stroke();
+                            } else {
+                                ctx.beginPath();
+                                ctx.moveTo(prevPoint.x, prevPoint.y);
+                                ctx.lineTo(currPoint.x, currPoint.y);
+                                ctx.stroke();
+                            }
                         } else if (brushType === 'marker') {
                             ctx.lineWidth = lineWidth;
+                            ctx.lineCap = 'butt';
                             ctx.globalAlpha = 0.6;
                             ctx.beginPath();
                             ctx.moveTo(prevPoint.x, prevPoint.y);
@@ -979,6 +1056,7 @@
                             ctx.globalAlpha = 1.0;
                         } else if (brushType === 'pencil') {
                             ctx.lineWidth = lineWidth;
+                            ctx.lineCap = 'butt';
                             ctx.globalAlpha = 0.7;
                             ctx.beginPath();
                             ctx.moveTo(prevPoint.x, prevPoint.y);
@@ -1001,6 +1079,7 @@
                             const widthMultiplier = Math.abs(Math.cos(angle - calligraphyAngle)) * 0.7 + 0.3;
                             
                             ctx.lineWidth = lineWidth * widthMultiplier;
+                            ctx.lineCap = 'butt';
                             ctx.beginPath();
                             ctx.moveTo(prevPoint.x, prevPoint.y);
                             ctx.lineTo(currPoint.x, currPoint.y);
