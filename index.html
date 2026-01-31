@@ -658,65 +658,75 @@
             
             currentStroke.points.push(point);
             
-            // Draw with pressure-sensitive width and brush type
-            const prevPoint = currentStroke.points[currentStroke.points.length - 2];
-            const avgPressure = (prevPoint.pressure + point.pressure) / 2;
+            const brushType = currentStroke.brushType;
+            
+            // For smooth drawing, we need at least 3 points
+            if (currentStroke.points.length < 3) {
+                // Draw initial line
+                if (currentStroke.points.length === 2) {
+                    const p0 = currentStroke.points[0];
+                    const p1 = currentStroke.points[1];
+                    const avgPressure = (p0.pressure + p1.pressure) / 2;
+                    const lineWidth = currentStroke.baseWidth * avgPressure;
+                    
+                    ctx.strokeStyle = currentStroke.color;
+                    ctx.lineWidth = lineWidth;
+                    ctx.lineCap = 'round';
+                    ctx.lineJoin = 'round';
+                    
+                    if (brushType === 'marker') {
+                        ctx.globalAlpha = 0.6;
+                    } else if (brushType === 'pencil') {
+                        ctx.globalAlpha = 0.7;
+                    } else {
+                        ctx.globalAlpha = 1.0;
+                    }
+                    
+                    ctx.beginPath();
+                    ctx.moveTo(p0.x, p0.y);
+                    ctx.lineTo(p1.x, p1.y);
+                    ctx.stroke();
+                    ctx.globalAlpha = 1.0;
+                }
+                return;
+            }
+            
+            // Draw smooth curves using the last 4 points
+            const len = currentStroke.points.length;
+            const p0 = currentStroke.points[len - 4] || currentStroke.points[0];
+            const p1 = currentStroke.points[len - 3];
+            const p2 = currentStroke.points[len - 2];
+            const p3 = currentStroke.points[len - 1];
+            
+            // Calculate pressure for this segment
+            const avgPressure = (p1.pressure + p2.pressure + p3.pressure) / 3;
             const lineWidth = currentStroke.baseWidth * avgPressure;
             
             ctx.strokeStyle = currentStroke.color;
             ctx.fillStyle = currentStroke.color;
+            ctx.lineWidth = lineWidth;
+            ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             
-            const brushType = currentStroke.brushType;
-            
-            if (brushType === 'solid') {
-                ctx.lineWidth = lineWidth;
-                ctx.lineCap = 'round';
-                ctx.beginPath();
-                ctx.moveTo(prevPoint.x, prevPoint.y);
-                ctx.lineTo(point.x, point.y);
-                ctx.stroke();
-            } else if (brushType === 'flow') {
-                // Smooth flow brush using quadratic curves
-                ctx.lineWidth = lineWidth;
-                ctx.lineCap = 'round';
-                
-                if (currentStroke.points.length > 2) {
-                    const prevPrevPoint = currentStroke.points[currentStroke.points.length - 3];
-                    const midX = (prevPrevPoint.x + prevPoint.x) / 2;
-                    const midY = (prevPrevPoint.y + prevPoint.y) / 2;
-                    const midX2 = (prevPoint.x + point.x) / 2;
-                    const midY2 = (prevPoint.y + point.y) / 2;
-                    
-                    ctx.beginPath();
-                    ctx.moveTo(midX, midY);
-                    ctx.quadraticCurveTo(prevPoint.x, prevPoint.y, midX2, midY2);
-                    ctx.stroke();
-                } else {
-                    ctx.beginPath();
-                    ctx.moveTo(prevPoint.x, prevPoint.y);
-                    ctx.lineTo(point.x, point.y);
-                    ctx.stroke();
-                }
-            } else if (brushType === 'marker') {
-                // Marker has a flat, chisel-like edge
-                ctx.lineWidth = lineWidth;
-                ctx.lineCap = 'butt';
+            // Apply brush-specific styles
+            if (brushType === 'marker') {
                 ctx.globalAlpha = 0.6;
-                ctx.beginPath();
-                ctx.moveTo(prevPoint.x, prevPoint.y);
-                ctx.lineTo(point.x, point.y);
-                ctx.stroke();
+            } else if (brushType === 'pencil') {
+                ctx.globalAlpha = 0.7;
+            } else {
                 ctx.globalAlpha = 1.0;
-            } else if (brushType === 'spray') {
-                // Spray creates scattered dots
-                const distance = Math.sqrt(Math.pow(point.x - prevPoint.x, 2) + Math.pow(point.y - prevPoint.y, 2));
+            }
+            
+            // Draw smooth curve using Catmull-Rom spline
+            if (brushType === 'spray') {
+                // Spray brush - scatter dots
+                const distance = Math.sqrt(Math.pow(p3.x - p2.x, 2) + Math.pow(p3.y - p2.y, 2));
                 const density = Math.max(1, Math.floor(distance / 2));
                 
                 for (let i = 0; i < density; i++) {
                     const t = i / density;
-                    const x = prevPoint.x + (point.x - prevPoint.x) * t;
-                    const y = prevPoint.y + (point.y - prevPoint.y) * t;
+                    const x = p2.x + (p3.x - p2.x) * t;
+                    const y = p2.y + (p3.y - p2.y) * t;
                     
                     const sprayRadius = lineWidth * 2;
                     const offsetX = (Math.random() - 0.5) * sprayRadius;
@@ -727,43 +737,63 @@
                     ctx.arc(x + offsetX, y + offsetY, Math.random() * 1.5, 0, Math.PI * 2);
                     ctx.fill();
                 }
-                ctx.globalAlpha = 1.0;
             } else if (brushType === 'pencil') {
-                // Pencil creates a textured line
-                ctx.lineWidth = lineWidth;
-                ctx.lineCap = 'butt';
-                ctx.globalAlpha = 0.7;
+                // Pencil with curve
+                drawCatmullRomSegment(ctx, p0, p1, p2, p3);
                 
-                // Draw main line
-                ctx.beginPath();
-                ctx.moveTo(prevPoint.x, prevPoint.y);
-                ctx.lineTo(point.x, point.y);
-                ctx.stroke();
-                
-                // Add texture with random thin lines
-                for (let i = 0; i < 3; i++) {
+                // Add texture
+                for (let i = 0; i < 2; i++) {
                     const offset = (Math.random() - 0.5) * lineWidth * 0.5;
                     ctx.lineWidth = 0.5;
                     ctx.globalAlpha = Math.random() * 0.3;
-                    ctx.beginPath();
-                    ctx.moveTo(prevPoint.x + offset, prevPoint.y + offset);
-                    ctx.lineTo(point.x + offset, point.y + offset);
-                    ctx.stroke();
+                    drawCatmullRomSegment(ctx, 
+                        {x: p0.x + offset, y: p0.y + offset},
+                        {x: p1.x + offset, y: p1.y + offset},
+                        {x: p2.x + offset, y: p2.y + offset},
+                        {x: p3.x + offset, y: p3.y + offset}
+                    );
+                    ctx.lineWidth = lineWidth;
                 }
-                ctx.globalAlpha = 1.0;
-            } else if (brushType === 'calligraphy') {
-                // Calligraphy has varied width based on direction
-                const angle = Math.atan2(point.y - prevPoint.y, point.x - prevPoint.x);
-                const calligraphyAngle = Math.PI / 4; // 45 degree angle
-                const widthMultiplier = Math.abs(Math.cos(angle - calligraphyAngle)) * 0.7 + 0.3;
-                
-                ctx.lineWidth = lineWidth * widthMultiplier;
-                ctx.lineCap = 'butt';
-                ctx.beginPath();
-                ctx.moveTo(prevPoint.x, prevPoint.y);
-                ctx.lineTo(point.x, point.y);
-                ctx.stroke();
+            } else {
+                // All other brushes use smooth curves
+                drawCatmullRomSegment(ctx, p0, p1, p2, p3);
             }
+            
+            ctx.globalAlpha = 1.0;
+        }
+        
+        // Draw a smooth curve segment using Catmull-Rom spline
+        function drawCatmullRomSegment(ctx, p0, p1, p2, p3) {
+            // Catmull-Rom spline through p1 and p2, with p0 and p3 as control points
+            ctx.beginPath();
+            ctx.moveTo(p1.x, p1.y);
+            
+            // Draw curve using multiple points for smoothness
+            const steps = 10;
+            for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                const t2 = t * t;
+                const t3 = t2 * t;
+                
+                // Catmull-Rom formula
+                const x = 0.5 * (
+                    (2 * p1.x) +
+                    (-p0.x + p2.x) * t +
+                    (2 * p0.x - 5 * p1.x + 4 * p2.x - p3.x) * t2 +
+                    (-p0.x + 3 * p1.x - 3 * p2.x + p3.x) * t3
+                );
+                
+                const y = 0.5 * (
+                    (2 * p1.y) +
+                    (-p0.y + p2.y) * t +
+                    (2 * p0.y - 5 * p1.y + 4 * p2.y - p3.y) * t2 +
+                    (-p0.y + 3 * p1.y - 3 * p2.y + p3.y) * t3
+                );
+                
+                ctx.lineTo(x, y);
+            }
+            
+            ctx.stroke();
         }
         
         function stopDrawing(e) {
@@ -792,104 +822,99 @@
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             
             strokes.forEach(stroke => {
-                for (let i = 1; i < stroke.points.length; i++) {
-                    const prevPoint = stroke.points[i - 1];
-                    const currPoint = stroke.points[i];
-                    const avgPressure = (prevPoint.pressure + currPoint.pressure) / 2;
-                    const lineWidth = stroke.baseWidth * avgPressure;
-                    
-                    ctx.strokeStyle = stroke.color;
-                    ctx.fillStyle = stroke.color;
-                    ctx.lineJoin = 'round';
-                    
-                    const brushType = stroke.brushType;
-                    
-                    if (brushType === 'solid') {
-                        ctx.lineWidth = lineWidth;
-                        ctx.lineCap = 'round';
-                        ctx.beginPath();
-                        ctx.moveTo(prevPoint.x, prevPoint.y);
-                        ctx.lineTo(currPoint.x, currPoint.y);
-                        ctx.stroke();
-                    } else if (brushType === 'flow') {
-                        ctx.lineWidth = lineWidth;
-                        ctx.lineCap = 'round';
-                        
-                        if (i > 1) {
-                            const prevPrevPoint = stroke.points[i - 2];
-                            const midX = (prevPrevPoint.x + prevPoint.x) / 2;
-                            const midY = (prevPrevPoint.y + prevPoint.y) / 2;
-                            const midX2 = (prevPoint.x + currPoint.x) / 2;
-                            const midY2 = (prevPoint.y + currPoint.y) / 2;
+                const brushType = stroke.brushType;
+                
+                // Draw each stroke with smooth curves
+                for (let i = 0; i < stroke.points.length; i++) {
+                    if (i < 2) {
+                        // Draw first segment as straight line
+                        if (i === 1) {
+                            const p0 = stroke.points[0];
+                            const p1 = stroke.points[1];
+                            const avgPressure = (p0.pressure + p1.pressure) / 2;
+                            const lineWidth = stroke.baseWidth * avgPressure;
+                            
+                            ctx.strokeStyle = stroke.color;
+                            ctx.lineWidth = lineWidth;
+                            ctx.lineCap = 'round';
+                            ctx.lineJoin = 'round';
+                            
+                            if (brushType === 'marker') {
+                                ctx.globalAlpha = 0.6;
+                            } else if (brushType === 'pencil') {
+                                ctx.globalAlpha = 0.7;
+                            } else {
+                                ctx.globalAlpha = 1.0;
+                            }
                             
                             ctx.beginPath();
-                            ctx.moveTo(midX, midY);
-                            ctx.quadraticCurveTo(prevPoint.x, prevPoint.y, midX2, midY2);
+                            ctx.moveTo(p0.x, p0.y);
+                            ctx.lineTo(p1.x, p1.y);
                             ctx.stroke();
+                            ctx.globalAlpha = 1.0;
+                        }
+                    } else {
+                        // Use Catmull-Rom curves
+                        const p0 = stroke.points[i - 3] || stroke.points[0];
+                        const p1 = stroke.points[i - 2];
+                        const p2 = stroke.points[i - 1];
+                        const p3 = stroke.points[i];
+                        
+                        const avgPressure = (p1.pressure + p2.pressure + p3.pressure) / 3;
+                        const lineWidth = stroke.baseWidth * avgPressure;
+                        
+                        ctx.strokeStyle = stroke.color;
+                        ctx.fillStyle = stroke.color;
+                        ctx.lineWidth = lineWidth;
+                        ctx.lineCap = 'round';
+                        ctx.lineJoin = 'round';
+                        
+                        if (brushType === 'marker') {
+                            ctx.globalAlpha = 0.6;
+                        } else if (brushType === 'pencil') {
+                            ctx.globalAlpha = 0.7;
                         } else {
-                            ctx.beginPath();
-                            ctx.moveTo(prevPoint.x, prevPoint.y);
-                            ctx.lineTo(currPoint.x, currPoint.y);
-                            ctx.stroke();
+                            ctx.globalAlpha = 1.0;
                         }
-                    } else if (brushType === 'marker') {
-                        ctx.lineWidth = lineWidth;
-                        ctx.lineCap = 'butt';
-                        ctx.globalAlpha = 0.6;
-                        ctx.beginPath();
-                        ctx.moveTo(prevPoint.x, prevPoint.y);
-                        ctx.lineTo(currPoint.x, currPoint.y);
-                        ctx.stroke();
-                        ctx.globalAlpha = 1.0;
-                    } else if (brushType === 'spray') {
-                        const distance = Math.sqrt(Math.pow(currPoint.x - prevPoint.x, 2) + Math.pow(currPoint.y - prevPoint.y, 2));
-                        const density = Math.max(1, Math.floor(distance / 2));
                         
-                        for (let j = 0; j < density; j++) {
-                            const t = j / density;
-                            const x = prevPoint.x + (currPoint.x - prevPoint.x) * t;
-                            const y = prevPoint.y + (currPoint.y - prevPoint.y) * t;
+                        if (brushType === 'spray') {
+                            const distance = Math.sqrt(Math.pow(p3.x - p2.x, 2) + Math.pow(p3.y - p2.y, 2));
+                            const density = Math.max(1, Math.floor(distance / 2));
                             
-                            const sprayRadius = lineWidth * 2;
-                            const offsetX = (Math.random() - 0.5) * sprayRadius;
-                            const offsetY = (Math.random() - 0.5) * sprayRadius;
+                            for (let j = 0; j < density; j++) {
+                                const t = j / density;
+                                const x = p2.x + (p3.x - p2.x) * t;
+                                const y = p2.y + (p3.y - p2.y) * t;
+                                
+                                const sprayRadius = lineWidth * 2;
+                                const offsetX = (Math.random() - 0.5) * sprayRadius;
+                                const offsetY = (Math.random() - 0.5) * sprayRadius;
+                                
+                                ctx.globalAlpha = Math.random() * 0.5 + 0.3;
+                                ctx.beginPath();
+                                ctx.arc(x + offsetX, y + offsetY, Math.random() * 1.5, 0, Math.PI * 2);
+                                ctx.fill();
+                            }
+                        } else if (brushType === 'pencil') {
+                            drawCatmullRomSegment(ctx, p0, p1, p2, p3);
                             
-                            ctx.globalAlpha = Math.random() * 0.5 + 0.3;
-                            ctx.beginPath();
-                            ctx.arc(x + offsetX, y + offsetY, Math.random() * 1.5, 0, Math.PI * 2);
-                            ctx.fill();
+                            for (let j = 0; j < 2; j++) {
+                                const offset = (Math.random() - 0.5) * lineWidth * 0.5;
+                                ctx.lineWidth = 0.5;
+                                ctx.globalAlpha = Math.random() * 0.3;
+                                drawCatmullRomSegment(ctx,
+                                    {x: p0.x + offset, y: p0.y + offset},
+                                    {x: p1.x + offset, y: p1.y + offset},
+                                    {x: p2.x + offset, y: p2.y + offset},
+                                    {x: p3.x + offset, y: p3.y + offset}
+                                );
+                                ctx.lineWidth = lineWidth;
+                            }
+                        } else {
+                            drawCatmullRomSegment(ctx, p0, p1, p2, p3);
                         }
-                        ctx.globalAlpha = 1.0;
-                    } else if (brushType === 'pencil') {
-                        ctx.lineWidth = lineWidth;
-                        ctx.lineCap = 'butt';
-                        ctx.globalAlpha = 0.7;
-                        ctx.beginPath();
-                        ctx.moveTo(prevPoint.x, prevPoint.y);
-                        ctx.lineTo(currPoint.x, currPoint.y);
-                        ctx.stroke();
                         
-                        for (let j = 0; j < 3; j++) {
-                            const offset = (Math.random() - 0.5) * lineWidth * 0.5;
-                            ctx.lineWidth = 0.5;
-                            ctx.globalAlpha = Math.random() * 0.3;
-                            ctx.beginPath();
-                            ctx.moveTo(prevPoint.x + offset, prevPoint.y + offset);
-                            ctx.lineTo(currPoint.x + offset, currPoint.y + offset);
-                            ctx.stroke();
-                        }
                         ctx.globalAlpha = 1.0;
-                    } else if (brushType === 'calligraphy') {
-                        const angle = Math.atan2(currPoint.y - prevPoint.y, currPoint.x - prevPoint.x);
-                        const calligraphyAngle = Math.PI / 4;
-                        const widthMultiplier = Math.abs(Math.cos(angle - calligraphyAngle)) * 0.7 + 0.3;
-                        
-                        ctx.lineWidth = lineWidth * widthMultiplier;
-                        ctx.lineCap = 'butt';
-                        ctx.beginPath();
-                        ctx.moveTo(prevPoint.x, prevPoint.y);
-                        ctx.lineTo(currPoint.x, currPoint.y);
-                        ctx.stroke();
                     }
                 }
             });
