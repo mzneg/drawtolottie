@@ -1141,10 +1141,11 @@
                 // Native iPad apps don't simplify - they use all the data
                 const simplifiedPoints = stroke.points;
                 
-                // Group points into smaller segments for smooth pressure variation
-                const segmentSize = 3; // Balance between smooth pressure and file size
+                // Create overlapping segments for smooth flow
+                const segmentSize = 4;
+                const stepSize = 2; // Overlap by 2 points
                 
-                for (let i = 0; i < simplifiedPoints.length - 1; i += segmentSize) {
+                for (let i = 0; i < simplifiedPoints.length - 1; i += stepSize) {
                     const endIdx = Math.min(i + segmentSize, simplifiedPoints.length - 1);
                     const segmentPoints = simplifiedPoints.slice(i, endIdx + 1);
                     
@@ -1180,7 +1181,7 @@
                         ddd: 0,
                         ind: layerIndex + 1,
                         ty: 4,
-                        nm: `Stroke ${strokeIdx + 1} Segment ${Math.floor(i / segmentSize)}`,
+                        nm: `Stroke ${strokeIdx + 1} Segment ${Math.floor(i / stepSize)}`,
                         sr: 1,
                         ks: {
                             o: { a: 0, k: opacity, ix: 11 },
