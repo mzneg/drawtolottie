@@ -1223,12 +1223,23 @@
                 const rgb = hexToRgb(stroke.color);
                 const easing = getEasingValues(easingType);
                 
-                // Group points into segments for pressure variation
-                const segmentSize = 5; // Points per segment
+                // Reduce points for smoother curves (every nth point)
+                const simplifiedPoints = [];
+                const step = Math.max(1, Math.floor(stroke.points.length / 30)); // Max 30 points per stroke
+                for (let i = 0; i < stroke.points.length; i += step) {
+                    simplifiedPoints.push(stroke.points[i]);
+                }
+                // Always include last point
+                if (simplifiedPoints[simplifiedPoints.length - 1] !== stroke.points[stroke.points.length - 1]) {
+                    simplifiedPoints.push(stroke.points[stroke.points.length - 1]);
+                }
                 
-                for (let i = 0; i < stroke.points.length - 1; i += segmentSize) {
-                    const endIdx = Math.min(i + segmentSize, stroke.points.length - 1);
-                    const segmentPoints = stroke.points.slice(i, endIdx + 1);
+                // Group points into segments for pressure variation
+                const segmentSize = 5;
+                
+                for (let i = 0; i < simplifiedPoints.length - 1; i += segmentSize) {
+                    const endIdx = Math.min(i + segmentSize, simplifiedPoints.length - 1);
+                    const segmentPoints = simplifiedPoints.slice(i, endIdx + 1);
                     
                     if (segmentPoints.length < 2) continue;
                     
@@ -1236,13 +1247,8 @@
                     const avgPressure = segmentPoints.reduce((sum, p) => sum + p.pressure, 0) / segmentPoints.length;
                     const segmentWidth = stroke.baseWidth * avgPressure;
                     
-                    // Smooth the path for flow brush
-                    let vertices;
-                    if (stroke.brushType === 'flow' && segmentPoints.length >= 3) {
-                        vertices = smoothPath(segmentPoints);
-                    } else {
-                        vertices = segmentPoints.map(p => [p.x, p.y]);
-                    }
+                    // Create smooth bezier path
+                    const bezierPath = createSmoothBezierPath(segmentPoints);
                     
                     const startTime = segmentPoints[0].time;
                     const endTime = segmentPoints[segmentPoints.length - 1].time;
@@ -1287,12 +1293,7 @@
                                         ix: 1,
                                         ks: {
                                             a: 0,
-                                            k: {
-                                                i: vertices.map(() => [0, 0]),
-                                                o: vertices.map(() => [0, 0]),
-                                                v: vertices,
-                                                c: false
-                                            },
+                                            k: bezierPath,
                                             ix: 2
                                         },
                                         nm: "Path 1",
@@ -1372,7 +1373,69 @@
             return lottieJSON;
         }
         
-        // Smooth path using quadratic interpolation
+        // Create smooth bezier path with curve handles
+        function createSmoothBezierPath(points) {
+            if (points.length < 2) {
+                return {
+                    i: [[0, 0]],
+                    o: [[0, 0]],
+                    v: [[points[0].x, points[0].y]],
+                    c: false
+                };
+            }
+            
+            const vertices = [];
+            const inTangents = [];
+            const outTangents = [];
+            
+            for (let i = 0; i < points.length; i++) {
+                const p = points[i];
+                vertices.push([p.x, p.y]);
+                
+                // Calculate tangents for smooth curves
+                let inTangent = [0, 0];
+                let outTangent = [0, 0];
+                
+                if (i > 0 && i < points.length - 1) {
+                    const prev = points[i - 1];
+                    const next = points[i + 1];
+                    
+                    // Use Catmull-Rom curve tension
+                    const tension = 0.3;
+                    
+                    // Calculate tangent based on neighboring points
+                    const dx = (next.x - prev.x) * tension;
+                    const dy = (next.y - prev.y) * tension;
+                    
+                    inTangent = [-dx, -dy];
+                    outTangent = [dx, dy];
+                } else if (i === 0 && points.length > 1) {
+                    // First point - tangent points to next
+                    const next = points[i + 1];
+                    const dx = (next.x - p.x) * 0.3;
+                    const dy = (next.y - p.y) * 0.3;
+                    outTangent = [dx, dy];
+                } else if (i === points.length - 1 && points.length > 1) {
+                    // Last point - tangent from previous
+                    const prev = points[i - 1];
+                    const dx = (p.x - prev.x) * 0.3;
+                    const dy = (p.y - prev.y) * 0.3;
+                    inTangent = [-dx, -dy];
+                }
+                
+                inTangents.push(inTangent);
+                outTangents.push(outTangent);
+            }
+            
+            return {
+                i: inTangents,
+                o: outTangents,
+                v: vertices,
+                c: false
+            };
+        }
+        
+        // Smooth path using quadratic interpolation (legacy, not used anymore)
         function smoothPath(points) {
             if (points.length < 3) {
                 return points.map(p => [p.x, p.y]);
