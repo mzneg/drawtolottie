@@ -638,7 +638,6 @@
         function draw(e) {
             if (!isDrawing) return;
             
-            // Check if pencil only mode is enabled
             if (pencilOnlyMode.checked && e.pointerType !== 'pen') {
                 return;
             }
@@ -655,35 +654,24 @@
             
             pressureValueSpan.textContent = Math.round(pos.pressure * 100) + '%';
             
+            // Smooth the point before adding it (reduces jitter)
+            if (currentStroke.points.length > 0) {
+                const lastPoint = currentStroke.points[currentStroke.points.length - 1];
+                // Average with last point for smoothing
+                point.x = lastPoint.x * 0.3 + point.x * 0.7;
+                point.y = lastPoint.y * 0.3 + point.y * 0.7;
+            }
+            
             currentStroke.points.push(point);
             
             const len = currentStroke.points.length;
             const brushType = currentStroke.brushType;
             
-            if (len === 1) {
-                // First point - just draw a dot
-                const lineWidth = currentStroke.baseWidth * point.pressure;
-                ctx.strokeStyle = currentStroke.color;
-                ctx.fillStyle = currentStroke.color;
-                ctx.lineWidth = lineWidth;
-                ctx.lineCap = 'round';
-                
-                ctx.beginPath();
-                ctx.arc(point.x, point.y, lineWidth / 2, 0, Math.PI * 2);
-                ctx.fill();
-                return;
-            }
-            
-            // From second point onward, draw smooth curves
-            const p0 = currentStroke.points[len - 2];
-            const p1 = currentStroke.points[len - 1];
-            
-            const avgPressure = (p0.pressure + p1.pressure) / 2;
-            const lineWidth = currentStroke.baseWidth * avgPressure;
+            // Need at least 2 points to start drawing
+            if (len < 2) return;
             
             ctx.strokeStyle = currentStroke.color;
             ctx.fillStyle = currentStroke.color;
-            ctx.lineWidth = lineWidth;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             
@@ -696,8 +684,80 @@
                 ctx.globalAlpha = 1.0;
             }
             
-            if (len === 2) {
-                // Second point - draw straight line to start
+            // For very smooth curves, use bezier with calculated control points
+            if (len >= 4) {
+                // Use the last 4 points for smooth bezier curve
+                const p0 = currentStroke.points[len - 4];
+                const p1 = currentStroke.points[len - 3];
+                const p2 = currentStroke.points[len - 2];
+                const p3 = currentStroke.points[len - 1];
+                
+                // Calculate average pressure
+                const avgPressure = (p1.pressure + p2.pressure) / 2;
+                const lineWidth = currentStroke.baseWidth * avgPressure;
+                ctx.lineWidth = lineWidth;
+                
+                // Calculate bezier control points for smooth curve
+                // Start point
+                const startX = (p0.x + p1.x) / 2;
+                const startY = (p0.y + p1.y) / 2;
+                
+                // End point
+                const endX = (p2.x + p3.x) / 2;
+                const endY = (p2.y + p3.y) / 2;
+                
+                // Control points
+                const cp1x = p1.x;
+                const cp1y = p1.y;
+                const cp2x = p2.x;
+                const cp2y = p2.y;
+                
+                if (brushType === 'spray') {
+                    // Sample along the bezier curve for spray
+                    for (let t = 0; t <= 1; t += 0.05) {
+                        const mt = 1 - t;
+                        const mt2 = mt * mt;
+                        const t2 = t * t;
+                        
+                        const x = mt2 * mt * startX + 3 * mt2 * t * cp1x + 3 * mt * t2 * cp2x + t2 * t * endX;
+                        const y = mt2 * mt * startY + 3 * mt2 * t * cp1y + 3 * mt * t2 * cp2y + t2 * t * endY;
+                        
+                        const sprayRadius = lineWidth * 2;
+                        const offsetX = (Math.random() - 0.5) * sprayRadius;
+                        const offsetY = (Math.random() - 0.5) * sprayRadius;
+                        ctx.globalAlpha = Math.random() * 0.5 + 0.3;
+                        ctx.beginPath();
+                        ctx.arc(x + offsetX, y + offsetY, Math.random() * 1.5, 0, Math.PI * 2);
+                        ctx.fill();
+                    }
+                } else {
+                    // Draw smooth bezier curve
+                    ctx.beginPath();
+                    ctx.moveTo(startX, startY);
+                    ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
+                    ctx.stroke();
+                    
+                    if (brushType === 'pencil') {
+                        for (let i = 0; i < 2; i++) {
+                            const offset = (Math.random() - 0.5) * lineWidth * 0.5;
+                            ctx.lineWidth = 0.5;
+                            ctx.globalAlpha = Math.random() * 0.3;
+                            ctx.beginPath();
+                            ctx.moveTo(startX + offset, startY + offset);
+                            ctx.bezierCurveTo(cp1x + offset, cp1y + offset, cp2x + offset, cp2y + offset, endX + offset, endY + offset);
+                            ctx.stroke();
+                            ctx.lineWidth = lineWidth;
+                        }
+                    }
+                }
+            } else if (len === 2 || len === 3) {
+                // First few points - draw simple line
+                const p0 = currentStroke.points[len - 2];
+                const p1 = currentStroke.points[len - 1];
+                const avgPressure = (p0.pressure + p1.pressure) / 2;
+                const lineWidth = currentStroke.baseWidth * avgPressure;
+                ctx.lineWidth = lineWidth;
+                
                 if (brushType === 'spray') {
                     const distance = Math.sqrt(Math.pow(p1.x - p0.x, 2) + Math.pow(p1.y - p0.y, 2));
                     const density = Math.max(1, Math.floor(distance / 2));
@@ -718,69 +778,6 @@
                     ctx.moveTo(p0.x, p0.y);
                     ctx.lineTo(p1.x, p1.y);
                     ctx.stroke();
-                    
-                    if (brushType === 'pencil') {
-                        for (let i = 0; i < 2; i++) {
-                            const offset = (Math.random() - 0.5) * lineWidth * 0.5;
-                            ctx.lineWidth = 0.5;
-                            ctx.globalAlpha = Math.random() * 0.3;
-                            ctx.beginPath();
-                            ctx.moveTo(p0.x + offset, p0.y + offset);
-                            ctx.lineTo(p1.x + offset, p1.y + offset);
-                            ctx.stroke();
-                            ctx.lineWidth = lineWidth;
-                        }
-                    }
-                }
-            } else {
-                // Third point and beyond - use smooth quadratic curves
-                const p_2 = currentStroke.points[len - 3];
-                
-                // Control point is the previous point
-                const cpx = p0.x;
-                const cpy = p0.y;
-                
-                // End point is midpoint between previous and current
-                const endX = (p0.x + p1.x) / 2;
-                const endY = (p0.y + p1.y) / 2;
-                
-                // Start point is midpoint of segment before
-                const startX = (p_2.x + p0.x) / 2;
-                const startY = (p_2.y + p0.y) / 2;
-                
-                if (brushType === 'spray') {
-                    // Sample points along the curve for spray
-                    for (let t = 0; t <= 1; t += 0.1) {
-                        const x = (1-t)*(1-t)*startX + 2*(1-t)*t*cpx + t*t*endX;
-                        const y = (1-t)*(1-t)*startY + 2*(1-t)*t*cpy + t*t*endY;
-                        const sprayRadius = lineWidth * 2;
-                        for (let j = 0; j < 2; j++) {
-                            const offsetX = (Math.random() - 0.5) * sprayRadius;
-                            const offsetY = (Math.random() - 0.5) * sprayRadius;
-                            ctx.globalAlpha = Math.random() * 0.5 + 0.3;
-                            ctx.beginPath();
-                            ctx.arc(x + offsetX, y + offsetY, Math.random() * 1.5, 0, Math.PI * 2);
-                            ctx.fill();
-                        }
-                    }
-                } else {
-                    ctx.beginPath();
-                    ctx.moveTo(startX, startY);
-                    ctx.quadraticCurveTo(cpx, cpy, endX, endY);
-                    ctx.stroke();
-                    
-                    if (brushType === 'pencil') {
-                        for (let i = 0; i < 2; i++) {
-                            const offset = (Math.random() - 0.5) * lineWidth * 0.5;
-                            ctx.lineWidth = 0.5;
-                            ctx.globalAlpha = Math.random() * 0.3;
-                            ctx.beginPath();
-                            ctx.moveTo(startX + offset, startY + offset);
-                            ctx.quadraticCurveTo(cpx + offset, cpy + offset, endX + offset, endY + offset);
-                            ctx.stroke();
-                            ctx.lineWidth = lineWidth;
-                        }
-                    }
                 }
             }
             
@@ -815,35 +812,28 @@
             strokes.forEach(stroke => {
                 const brushType = stroke.brushType;
                 
-                for (let i = 0; i < stroke.points.length; i++) {
-                    if (i === 0) {
-                        // First point - draw dot
-                        const p = stroke.points[0];
-                        const lineWidth = stroke.baseWidth * p.pressure;
-                        ctx.fillStyle = stroke.color;
-                        ctx.beginPath();
-                        ctx.arc(p.x, p.y, lineWidth / 2, 0, Math.PI * 2);
-                        ctx.fill();
-                    } else if (i === 1) {
-                        // Second point - straight line
-                        const p0 = stroke.points[0];
-                        const p1 = stroke.points[1];
+                ctx.strokeStyle = stroke.color;
+                ctx.fillStyle = stroke.color;
+                ctx.lineCap = 'round';
+                ctx.lineJoin = 'round';
+                
+                if (brushType === 'marker') {
+                    ctx.globalAlpha = 0.6;
+                } else if (brushType === 'pencil') {
+                    ctx.globalAlpha = 0.7;
+                } else {
+                    ctx.globalAlpha = 1.0;
+                }
+                
+                // Draw the stroke
+                for (let i = 1; i < stroke.points.length; i++) {
+                    if (i < 3) {
+                        // First few points - simple line
+                        const p0 = stroke.points[i - 1];
+                        const p1 = stroke.points[i];
                         const avgPressure = (p0.pressure + p1.pressure) / 2;
                         const lineWidth = stroke.baseWidth * avgPressure;
-                        
-                        ctx.strokeStyle = stroke.color;
-                        ctx.fillStyle = stroke.color;
                         ctx.lineWidth = lineWidth;
-                        ctx.lineCap = 'round';
-                        ctx.lineJoin = 'round';
-                        
-                        if (brushType === 'marker') {
-                            ctx.globalAlpha = 0.6;
-                        } else if (brushType === 'pencil') {
-                            ctx.globalAlpha = 0.7;
-                        } else {
-                            ctx.globalAlpha = 1.0;
-                        }
                         
                         if (brushType === 'spray') {
                             const distance = Math.sqrt(Math.pow(p1.x - p0.x, 2) + Math.pow(p1.y - p0.y, 2));
@@ -866,56 +856,45 @@
                             ctx.lineTo(p1.x, p1.y);
                             ctx.stroke();
                         }
-                        
-                        ctx.globalAlpha = 1.0;
                     } else {
-                        // Third point and beyond - smooth curves
-                        const p_2 = stroke.points[i - 2];
-                        const p0 = stroke.points[i - 1];
-                        const p1 = stroke.points[i];
+                        // Use cubic bezier for smooth curves
+                        const p0 = stroke.points[i - 3];
+                        const p1 = stroke.points[i - 2];
+                        const p2 = stroke.points[i - 1];
+                        const p3 = stroke.points[i];
                         
-                        const avgPressure = (p0.pressure + p1.pressure) / 2;
+                        const avgPressure = (p1.pressure + p2.pressure) / 2;
                         const lineWidth = stroke.baseWidth * avgPressure;
-                        
-                        const cpx = p0.x;
-                        const cpy = p0.y;
-                        const startX = (p_2.x + p0.x) / 2;
-                        const startY = (p_2.y + p0.y) / 2;
-                        const endX = (p0.x + p1.x) / 2;
-                        const endY = (p0.y + p1.y) / 2;
-                        
-                        ctx.strokeStyle = stroke.color;
-                        ctx.fillStyle = stroke.color;
                         ctx.lineWidth = lineWidth;
-                        ctx.lineCap = 'round';
-                        ctx.lineJoin = 'round';
                         
-                        if (brushType === 'marker') {
-                            ctx.globalAlpha = 0.6;
-                        } else if (brushType === 'pencil') {
-                            ctx.globalAlpha = 0.7;
-                        } else {
-                            ctx.globalAlpha = 1.0;
-                        }
+                        const startX = (p0.x + p1.x) / 2;
+                        const startY = (p0.y + p1.y) / 2;
+                        const endX = (p2.x + p3.x) / 2;
+                        const endY = (p2.y + p3.y) / 2;
+                        const cp1x = p1.x;
+                        const cp1y = p1.y;
+                        const cp2x = p2.x;
+                        const cp2y = p2.y;
                         
                         if (brushType === 'spray') {
-                            for (let t = 0; t <= 1; t += 0.1) {
-                                const x = (1-t)*(1-t)*startX + 2*(1-t)*t*cpx + t*t*endX;
-                                const y = (1-t)*(1-t)*startY + 2*(1-t)*t*cpy + t*t*endY;
+                            for (let t = 0; t <= 1; t += 0.05) {
+                                const mt = 1 - t;
+                                const mt2 = mt * mt;
+                                const t2 = t * t;
+                                const x = mt2 * mt * startX + 3 * mt2 * t * cp1x + 3 * mt * t2 * cp2x + t2 * t * endX;
+                                const y = mt2 * mt * startY + 3 * mt2 * t * cp1y + 3 * mt * t2 * cp2y + t2 * t * endY;
                                 const sprayRadius = lineWidth * 2;
-                                for (let j = 0; j < 2; j++) {
-                                    const offsetX = (Math.random() - 0.5) * sprayRadius;
-                                    const offsetY = (Math.random() - 0.5) * sprayRadius;
-                                    ctx.globalAlpha = Math.random() * 0.5 + 0.3;
-                                    ctx.beginPath();
-                                    ctx.arc(x + offsetX, y + offsetY, Math.random() * 1.5, 0, Math.PI * 2);
-                                    ctx.fill();
-                                }
+                                const offsetX = (Math.random() - 0.5) * sprayRadius;
+                                const offsetY = (Math.random() - 0.5) * sprayRadius;
+                                ctx.globalAlpha = Math.random() * 0.5 + 0.3;
+                                ctx.beginPath();
+                                ctx.arc(x + offsetX, y + offsetY, Math.random() * 1.5, 0, Math.PI * 2);
+                                ctx.fill();
                             }
                         } else {
                             ctx.beginPath();
                             ctx.moveTo(startX, startY);
-                            ctx.quadraticCurveTo(cpx, cpy, endX, endY);
+                            ctx.bezierCurveTo(cp1x, cp1y, cp2x, cp2y, endX, endY);
                             ctx.stroke();
                             
                             if (brushType === 'pencil') {
@@ -925,16 +904,16 @@
                                     ctx.globalAlpha = Math.random() * 0.3;
                                     ctx.beginPath();
                                     ctx.moveTo(startX + offset, startY + offset);
-                                    ctx.quadraticCurveTo(cpx + offset, cpy + offset, endX + offset, endY + offset);
+                                    ctx.bezierCurveTo(cp1x + offset, cp1y + offset, cp2x + offset, cp2y + offset, endX + offset, endY + offset);
                                     ctx.stroke();
                                     ctx.lineWidth = lineWidth;
                                 }
                             }
                         }
-                        
-                        ctx.globalAlpha = 1.0;
                     }
                 }
+                
+                ctx.globalAlpha = 1.0;
             });
         }
         
@@ -1431,6 +1410,7 @@
             const inTangents = [];
             const outTangents = [];
             
+            // Build smooth bezier path using midpoints (matches canvas drawing)
             for (let i = 0; i < points.length; i++) {
                 const p = points[i];
                 
@@ -1441,8 +1421,9 @@
                     
                     if (points.length > 1) {
                         const next = points[1];
-                        const dx = (next.x - p.x) * 0.25;
-                        const dy = (next.y - p.y) * 0.25;
+                        // Point toward next
+                        const dx = (next.x - p.x) * 0.33;
+                        const dy = (next.y - p.y) * 0.33;
                         outTangents.push([dx, dy]);
                     } else {
                         outTangents.push([0, 0]);
@@ -1453,22 +1434,27 @@
                     outTangents.push([0, 0]);
                     
                     const prev = points[i - 1];
-                    const dx = (p.x - prev.x) * 0.25;
-                    const dy = (p.y - prev.y) * 0.25;
+                    // Point from previous
+                    const dx = (p.x - prev.x) * 0.33;
+                    const dy = (p.y - prev.y) * 0.33;
                     inTangents.push([-dx, -dy]);
                 } else {
-                    // Middle points - use quadratic-style tangents
+                    // Middle points
+                    // Use midpoint as vertex for smooth connection
                     const prev = points[i - 1];
                     const next = points[i + 1];
                     
-                    vertices.push([p.x, p.y]);
+                    // Vertex at midpoint between prev and next
+                    const vx = (prev.x + next.x) / 2;
+                    const vy = (prev.y + next.y) / 2;
+                    vertices.push([vx, vy]);
                     
-                    // Tangent based on neighboring points (quadratic curve style)
-                    const dx = (next.x - prev.x) * 0.25;
-                    const dy = (next.y - prev.y) * 0.25;
+                    // Control point tangents point to current point
+                    const dx1 = p.x - vx;
+                    const dy1 = p.y - vy;
                     
-                    inTangents.push([-dx, -dy]);
-                    outTangents.push([dx, dy]);
+                    inTangents.push([dx1, dy1]);
+                    outTangents.push([dx1, dy1]);
                 }
             }
             
