@@ -1141,9 +1141,9 @@
                 // Native iPad apps don't simplify - they use all the data
                 const simplifiedPoints = stroke.points;
                 
-                // Create overlapping segments for smooth flow
-                const segmentSize = 4;
-                const stepSize = 2; // Overlap by 2 points
+                // Larger segments for ultra-smooth curves (like native iPad)
+                const segmentSize = 10; // More points = smoother curves
+                const stepSize = 5; // 50% overlap for pressure blending
                 
                 for (let i = 0; i < simplifiedPoints.length - 1; i += stepSize) {
                     const endIdx = Math.min(i + segmentSize, simplifiedPoints.length - 1);
