@@ -1141,57 +1141,52 @@
                 // Native iPad apps don't simplify - they use all the data
                 const simplifiedPoints = stroke.points;
                 
-                // Larger segments for ultra-smooth curves (like native iPad)
-                const segmentSize = 10; // More points = smoother curves
-                const stepSize = 5; // 50% overlap for pressure blending
+                // Use entire stroke as one continuous smooth path
+                const segmentPoints = simplifiedPoints;
                 
-                for (let i = 0; i < simplifiedPoints.length - 1; i += stepSize) {
-                    const endIdx = Math.min(i + segmentSize, simplifiedPoints.length - 1);
-                    const segmentPoints = simplifiedPoints.slice(i, endIdx + 1);
-                    
-                    if (segmentPoints.length < 2) continue;
-                    
-                    // Calculate average pressure for this segment
-                    const avgPressure = segmentPoints.reduce((sum, p) => sum + p.pressure, 0) / segmentPoints.length;
-                    const segmentWidth = stroke.baseWidth * avgPressure;
-                    
-                    // Create smooth bezier path
-                    const bezierPath = createSmoothBezierPath(segmentPoints);
-                    
-                    const startTime = segmentPoints[0].time;
-                    const endTime = segmentPoints[segmentPoints.length - 1].time;
-                    const startFrame = (startTime / 1000 / speed) * fps;
-                    const endFrame = (endTime / 1000 / speed) * fps;
-                    
-                    // Determine line cap based on brush type
-                    let lineCap = 2; // round
-                    if (stroke.brushType === 'marker' || stroke.brushType === 'pencil' || stroke.brushType === 'calligraphy') {
-                        lineCap = 1; // butt
-                    }
-                    
-                    // Determine opacity based on brush type
-                    let opacity = 100;
-                    if (stroke.brushType === 'marker') {
-                        opacity = 60;
-                    } else if (stroke.brushType === 'pencil') {
-                        opacity = 70;
-                    }
-                    
-                    const layer = {
-                        ddd: 0,
-                        ind: layerIndex + 1,
-                        ty: 4,
-                        nm: `Stroke ${strokeIdx + 1} Segment ${Math.floor(i / stepSize)}`,
-                        sr: 1,
-                        ks: {
-                            o: { a: 0, k: opacity, ix: 11 },
-                            r: { a: 0, k: 0, ix: 10 },
-                            p: { a: 0, k: [0, 0, 0], ix: 2 },
-                            a: { a: 0, k: [0, 0, 0], ix: 1 },
-                            s: { a: 0, k: [100, 100, 100], ix: 6 }
-                        },
-                        ao: 0,
-                        shapes: [
+                if (segmentPoints.length < 2) return;
+                
+                // Average pressure for stroke width
+                const avgPressure = segmentPoints.reduce((sum, p) => sum + p.pressure, 0) / segmentPoints.length;
+                const segmentWidth = stroke.baseWidth * avgPressure;
+                
+                // Create one smooth bezier path for entire stroke
+                const bezierPath = createSmoothBezierPath(segmentPoints);
+                
+                const startTime = segmentPoints[0].time;
+                const endTime = segmentPoints[segmentPoints.length - 1].time;
+                const startFrame = (startTime / 1000 / speed) * fps;
+                const endFrame = (endTime / 1000 / speed) * fps;
+                
+                // Line cap based on brush
+                let lineCap = 2; // round
+                if (stroke.brushType === 'marker' || stroke.brushType === 'pencil' || stroke.brushType === 'calligraphy') {
+                    lineCap = 1; // butt
+                }
+                
+                // Opacity based on brush
+                let opacity = 100;
+                if (stroke.brushType === 'marker') {
+                    opacity = 60;
+                } else if (stroke.brushType === 'pencil') {
+                    opacity = 70;
+                }
+                
+                const layer = {
+                    ddd: 0,
+                    ind: layerIndex + 1,
+                    ty: 4,
+                    nm: `Stroke ${strokeIdx + 1}`,
+                    sr: 1,
+                    ks: {
+                        o: { a: 0, k: opacity, ix: 11 },
+                        r: { a: 0, k: 0, ix: 10 },
+                        p: { a: 0, k: [0, 0, 0], ix: 2 },
+                        a: { a: 0, k: [0, 0, 0], ix: 1 },
+                        s: { a: 0, k: [100, 100, 100], ix: 6 }
+                    },
+                    ao: 0,
+                    shapes: [
                             {
                                 ty: "gr",
                                 it: [
@@ -1272,10 +1267,9 @@
                         st: 0,
                         bm: 0
                     };
-                    
-                    lottieJSON.layers.push(layer);
-                    layerIndex++;
-                }
+                
+                lottieJSON.layers.push(layer);
+                layerIndex++;
             });
             
             return lottieJSON;
