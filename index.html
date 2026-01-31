@@ -1303,7 +1303,6 @@
             }
             
             if (points.length === 2) {
-                // Straight line
                 return {
                     i: [[0, 0], [0, 0]],
                     o: [[0, 0], [0, 0]],
@@ -1319,37 +1318,31 @@
             // First point
             vertices.push([points[0].x, points[0].y]);
             inTangents.push([0, 0]);
-            outTangents.push([0, 0]); // Will be set later
             
-            // Create vertices at midpoints and calculate tangents
+            // First out tangent - pointing toward first curve
+            const firstMid = {x: (points[0].x + points[1].x) / 2, y: (points[0].y + points[1].y) / 2};
+            const firstCP1 = {
+                x: points[0].x + (2/3) * (points[1].x - points[0].x),
+                y: points[0].y + (2/3) * (points[1].y - points[0].y)
+            };
+            outTangents.push([
+                firstCP1.x - points[0].x,
+                firstCP1.y - points[0].y
+            ]);
+            
+            // Create vertices at midpoints with proper tangents
             for (let i = 1; i < points.length - 1; i++) {
                 const p0 = points[i - 1];
                 const p1 = points[i];     // Control point
                 const p2 = points[i + 1];
                 
-                // Midpoints (these become vertices)
-                const midStart = {x: (p0.x + p1.x) / 2, y: (p0.y + p1.y) / 2};
+                // This curve goes from midpoint(p0,p1) to midpoint(p1,p2)
                 const midEnd = {x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2};
                 
                 // Add midEnd as vertex
                 vertices.push([midEnd.x, midEnd.y]);
                 
-                // Quadratic to cubic bezier conversion:
-                // For quadratic from midStart to midEnd with control p1:
-                // CP1 = midStart + 2/3 * (p1 - midStart)
-                // CP2 = midEnd + 2/3 * (p1 - midEnd)
-                
-                // Out tangent for previous vertex (pointing to CP1)
-                const cp1 = {
-                    x: midStart.x + (2/3) * (p1.x - midStart.x),
-                    y: midStart.y + (2/3) * (p1.y - midStart.y)
-                };
-                outTangents[outTangents.length - 1] = [
-                    cp1.x - midStart.x,
-                    cp1.y - midStart.y
-                ];
-                
-                // In tangent for current vertex (from CP2)
+                // Quadratic to cubic: CP2 = end + 2/3 * (control - end)
                 const cp2 = {
                     x: midEnd.x + (2/3) * (p1.x - midEnd.x),
                     y: midEnd.y + (2/3) * (p1.y - midEnd.y)
@@ -1359,14 +1352,36 @@
                     cp2.y - midEnd.y
                 ]);
                 
-                // Out tangent placeholder
-                outTangents.push([0, 0]);
+                // Out tangent for next curve (if not last midpoint)
+                if (i < points.length - 2) {
+                    const nextControl = points[i + 1];
+                    const cp1Next = {
+                        x: midEnd.x + (2/3) * (nextControl.x - midEnd.x),
+                        y: midEnd.y + (2/3) * (nextControl.y - midEnd.y)
+                    };
+                    outTangents.push([
+                        cp1Next.x - midEnd.x,
+                        cp1Next.y - midEnd.y
+                    ]);
+                } else {
+                    outTangents.push([0, 0]);
+                }
             }
             
             // Last point
-            vertices.push([points[points.length - 1].x, points[points.length - 1].y]);
-            inTangents.push([0, 0]);
-            outTangents[outTangents.length - 1] = [0, 0];
+            const last = points[points.length - 1];
+            vertices.push([last.x, last.y]);
+            
+            const secondLast = points[points.length - 2];
+            const lastCP2 = {
+                x: last.x + (2/3) * (secondLast.x - last.x),
+                y: last.y + (2/3) * (secondLast.y - last.y)
+            };
+            inTangents.push([
+                lastCP2.x - last.x,
+                lastCP2.y - last.y
+            ]);
+            outTangents.push([0, 0]);
             
             return {
                 i: inTangents,
