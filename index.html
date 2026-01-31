@@ -1287,7 +1287,7 @@
             return lottieJSON;
         }
         
-        // Create smooth bezier path matching the simple midpoint quadratic technique
+        // Create smooth bezier path that matches the quadratic curve technique
         function createSmoothBezierPath(points) {
             if (points.length < 2) {
                 return {
@@ -1308,39 +1308,59 @@
                 };
             }
             
-            // Build path using midpoints as vertices
             const vertices = [];
             const inTangents = [];
             const outTangents = [];
             
-            // First vertex is the first point
+            // First point
             vertices.push([points[0].x, points[0].y]);
             inTangents.push([0, 0]);
-            outTangents.push([0, 0]);
             
-            // Middle vertices are midpoints
+            // Out tangent points toward midpoint to next
+            const firstMidX = (points[0].x + points[1].x) / 2;
+            const firstMidY = (points[0].y + points[1].y) / 2;
+            outTangents.push([
+                (firstMidX - points[0].x) * 0.66,
+                (firstMidY - points[0].y) * 0.66
+            ]);
+            
+            // Middle vertices - these are the midpoints
             for (let i = 1; i < points.length - 1; i++) {
                 const prev = points[i - 1];
                 const curr = points[i];
                 const next = points[i + 1];
                 
-                // Vertex at midpoint
-                const midX = (curr.x + next.x) / 2;
-                const midY = (curr.y + next.y) / 2;
-                vertices.push([midX, midY]);
+                // Vertex at midpoint between curr and next
+                const vx = (curr.x + next.x) / 2;
+                const vy = (curr.y + next.y) / 2;
+                vertices.push([vx, vy]);
                 
-                // Tangent points to the actual point (control point)
-                const dx = curr.x - midX;
-                const dy = curr.y - midY;
+                // For quadratic curve: control point is curr
+                // In tangent points from vertex toward control point
+                const inDx = (curr.x - vx) * 0.66;
+                const inDy = (curr.y - vy) * 0.66;
+                inTangents.push([inDx, inDy]);
                 
-                inTangents.push([dx, dy]);
-                outTangents.push([dx, dy]);
+                // Out tangent also points toward control point (symmetric for smooth curve)
+                const outDx = (curr.x - vx) * 0.66;
+                const outDy = (curr.y - vy) * 0.66;
+                outTangents.push([outDx, outDy]);
             }
             
-            // Last vertex is the last point
+            // Last point
             const last = points[points.length - 1];
+            const secondLast = points[points.length - 2];
+            
             vertices.push([last.x, last.y]);
-            inTangents.push([0, 0]);
+            
+            // In tangent points from last point toward previous midpoint
+            const lastMidX = (secondLast.x + last.x) / 2;
+            const lastMidY = (secondLast.y + last.y) / 2;
+            inTangents.push([
+                (lastMidX - last.x) * 0.66,
+                (lastMidY - last.y) * 0.66
+            ]);
+            
             outTangents.push([0, 0]);
             
             return {
