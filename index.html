@@ -229,8 +229,8 @@
             </div>
             <div class="setting-group">
                 <label>Smoothing:</label>
-                <input type="range" id="smoothingStrength" min="0" max="100" value="70" style="width: 120px;">
-                <span id="smoothingValue">70%</span>
+                <input type="range" id="smoothingStrength" min="0" max="100" value="60" style="width: 120px;">
+                <span id="smoothingValue">60%</span>
             </div>
         </div>
         
@@ -1509,69 +1509,91 @@
             if (t <= 0) return 0;
             if (t >= 1) return 1;
             
+            let result;
+            
             // Mathematical easing functions
             switch(easingType) {
                 case 'linear':
-                    return t;
+                    result = t;
+                    break;
                     
                 case 'easeIn': // cubic-bezier(0.42, 0, 1, 1)
-                    return t * t * t;
+                    result = t * t * t;
+                    break;
                     
                 case 'easeOut': // cubic-bezier(0, 0, 0.58, 1)
-                    return 1 - Math.pow(1 - t, 3);
+                    result = 1 - Math.pow(1 - t, 3);
+                    break;
                     
                 case 'easeInOut': // cubic-bezier(0.42, 0, 0.58, 1)
-                    return t < 0.5 
+                    result = t < 0.5 
                         ? 4 * t * t * t 
                         : 1 - Math.pow(-2 * t + 2, 3) / 2;
+                    break;
                     
                 case 'anticipate':
                     const c1 = 1.70158;
                     const c2 = c1 * 1.525;
-                    return t < 0.5
+                    result = t < 0.5
                         ? (Math.pow(2 * t, 2) * ((c2 + 1) * 2 * t - c2)) / 2
                         : (Math.pow(2 * t - 2, 2) * ((c2 + 1) * (t * 2 - 2) + c2) + 2) / 2;
+                    break;
                     
                 case 'overshoot':
                     const c3 = 1.70158;
                     const c4 = c3 + 1;
-                    return 1 + c4 * Math.pow(t - 1, 3) + c3 * Math.pow(t - 1, 2);
+                    result = 1 + c4 * Math.pow(t - 1, 3) + c3 * Math.pow(t - 1, 2);
+                    break;
                     
                 case 'spring':
                 case 'springSnappy':
                     // Approximation of spring with damping
                     const decay = Math.pow(2, -10 * t);
-                    return 1 - decay * Math.cos((t * 7 - 0.75) * Math.PI * 2);
+                    result = 1 - decay * Math.cos((t * 7 - 0.75) * Math.PI * 2);
+                    break;
                     
                 case 'springBouncy':
                     const n1 = 7.5625;
                     const d1 = 2.75;
                     if (t < 1 / d1) {
-                        return n1 * t * t;
+                        result = n1 * t * t;
                     } else if (t < 2 / d1) {
-                        return n1 * (t -= 1.5 / d1) * t + 0.75;
+                        result = n1 * (t -= 1.5 / d1) * t + 0.75;
                     } else if (t < 2.5 / d1) {
-                        return n1 * (t -= 2.25 / d1) * t + 0.9375;
+                        result = n1 * (t -= 2.25 / d1) * t + 0.9375;
                     } else {
-                        return n1 * (t -= 2.625 / d1) * t + 0.984375;
+                        result = n1 * (t -= 2.625 / d1) * t + 0.984375;
                     }
+                    break;
                     
                 case 'springGentle':
                     // Gentle ease out
-                    return 1 - Math.pow(1 - t, 2);
+                    result = 1 - Math.pow(1 - t, 2);
+                    break;
                     
                 case 'springWobbly':
                     // Elastic overshoot
                     const c5 = (2 * Math.PI) / 3;
-                    return t === 0 ? 0 : t === 1 ? 1 :
+                    result = t === 0 ? 0 : t === 1 ? 1 :
                         Math.pow(2, -10 * t) * Math.sin((t * 10 - 0.75) * c5) + 1;
+                    break;
                     
                 default:
-                    return t;
+                    result = t;
             }
+            
+            // Debug first few calls
+            if (window.easingDebugCount === undefined) window.easingDebugCount = 0;
+            if (window.easingDebugCount < 5) {
+                console.log(`Easing ${easingType}: t=${t.toFixed(3)} → result=${result.toFixed(3)}`);
+                window.easingDebugCount++;
+            }
+            
+            return result;
         }
         
         function generateLottieJSON() {
+            window.easingDebugCount = 0; // Reset debug counter
             const speed = parseFloat(animationSpeedInput.value);
             const fps = 30; // Lower FPS for better performance
             const easingType = easingTypeInput.value;
@@ -1640,12 +1662,12 @@
                 const pressures = strokePoints.map(p => p.pressure);
                 const minPressure = Math.min(...pressures);
                 const maxPressure = Math.max(...pressures);
-                const hasPressureVariation = (maxPressure - minPressure) > 0.2; // 20% variation threshold
+                const hasPressureVariation = (maxPressure - minPressure) > 0.3; // 30% variation threshold (increased)
                 
                 if (hasPressureVariation) {
-                    // Use larger stroked segments for pressure-sensitive strokes (lighter than filled shapes)
-                    const segmentSize = 30; // Very large segments
-                    const stepSize = 25; // Minimal overlap
+                    // Use filled shapes with VERY LARGE segments for pressure-sensitive strokes
+                    const segmentSize = 50; // Very large to minimize layer count
+                    const stepSize = 40; // Minimal overlap
                     
                     for (let i = 0; i < strokePoints.length - 1; i += stepSize) {
                         const endIdx = Math.min(i + segmentSize, strokePoints.length);
@@ -1653,25 +1675,72 @@
                         
                         if (segmentPoints.length < 2) continue;
                         
-                        // Average pressure for this segment
-                        const avgPressure = segmentPoints.reduce((sum, p) => sum + p.pressure, 0) / segmentPoints.length;
-                        const segmentWidth = stroke.baseWidth * avgPressure;
+                        // Create variable-width outline
+                        const leftEdge = [];
+                        const rightEdge = [];
                         
-                        // Create smooth bezier path for segment
-                        const bezierPath = createSmoothBezierPath(segmentPoints);
+                        for (let j = 0; j < segmentPoints.length; j++) {
+                            const p = segmentPoints[j];
+                            const width = stroke.baseWidth * p.pressure;
+                            const halfWidth = width / 2;
+                            
+                            // Calculate perpendicular direction
+                            let perpX, perpY;
+                            const globalIdx = i + j;
+                            
+                            if (globalIdx === 0) {
+                                const next = strokePoints[globalIdx + 1];
+                                const dx = next.x - p.x;
+                                const dy = next.y - p.y;
+                                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                                perpX = -dy / len;
+                                perpY = dx / len;
+                            } else if (globalIdx === strokePoints.length - 1) {
+                                const prev = strokePoints[globalIdx - 1];
+                                const dx = p.x - prev.x;
+                                const dy = p.y - prev.y;
+                                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                                perpX = -dy / len;
+                                perpY = dx / len;
+                            } else {
+                                const prev = strokePoints[Math.max(0, globalIdx - 1)];
+                                const next = strokePoints[Math.min(strokePoints.length - 1, globalIdx + 1)];
+                                const dx = next.x - prev.x;
+                                const dy = next.y - prev.y;
+                                const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                                perpX = -dy / len;
+                                perpY = dx / len;
+                            }
+                            
+                            leftEdge.push({
+                                x: p.x + perpX * halfWidth,
+                                y: p.y + perpY * halfWidth,
+                                pressure: 1,
+                                time: p.time
+                            });
+                            
+                            rightEdge.push({
+                                x: p.x - perpX * halfWidth,
+                                y: p.y - perpY * halfWidth,
+                                pressure: 1,
+                                time: p.time
+                            });
+                        }
+                        
+                        // Create closed shape
+                        const shapePoints = [...leftEdge, ...rightEdge.reverse()];
+                        const bezierPath = createSmoothBezierPath(shapePoints);
+                        bezierPath.c = true;
                         
                         const startTime = segmentPoints[0].time;
                         const endTime = segmentPoints[segmentPoints.length - 1].time;
                         
-                        // Apply easing to timing
-                        const segmentStartPercent = ((startTime - drawingStartTime) / totalDrawingDuration);
-                        const segmentEndPercent = ((endTime - drawingStartTime) / totalDrawingDuration);
-                        const easedStartProgress = applyEasingToProgress(segmentStartPercent, easingType);
-                        const easedEndProgress = applyEasingToProgress(segmentEndPercent, easingType);
-                        const globalStartFrame = easedStartProgress * overallEndFrame;
-                        const globalEndFrame = easedEndProgress * overallEndFrame;
+                        // Apply easing - NO longer modify timing, just use easing curve in animation
+                        const segmentStartPercent = (startTime - drawingStartTime) / totalDrawingDuration;
+                        const segmentEndPercent = (endTime - drawingStartTime) / totalDrawingDuration;
+                        const globalStartFrame = segmentStartPercent * overallEndFrame;
+                        const globalEndFrame = segmentEndPercent * overallEndFrame;
                         
-                        // Opacity
                         let opacity = 100;
                         if (stroke.brushType === 'marker') {
                             opacity = 60;
@@ -1711,37 +1780,17 @@
                                             hd: false
                                         },
                                         {
-                                            ty: "st",
+                                            ty: "fl",
                                             c: {
                                                 a: 0,
                                                 k: [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1],
-                                                ix: 3
+                                                ix: 4
                                             },
-                                            o: { a: 0, k: 100, ix: 4 },
-                                            w: { a: 0, k: segmentWidth, ix: 5 },
-                                            lc: 2,
-                                            lj: 2,
+                                            o: { a: 0, k: 100, ix: 5 },
+                                            r: 1,
                                             bm: 0,
-                                            nm: "Stroke 1",
-                                            mn: "ADBE Vector Graphic - Stroke",
-                                            hd: false
-                                        },
-                                        {
-                                            ty: "tm",
-                                            s: { a: 0, k: 0, ix: 1 },
-                                            e: {
-                                                a: 1,
-                                                k: [
-                                                    { i: { x: [1], y: [1] }, o: { x: [0], y: [0] }, t: globalStartFrame, s: [0] },
-                                                    { t: globalEndFrame, s: [100] }
-                                                ],
-                                                ix: 2
-                                            },
-                                            o: { a: 0, k: 0, ix: 3 },
-                                            m: 1,
-                                            ix: 3,
-                                            nm: "Trim Paths 1",
-                                            mn: "ADBE Vector Filter - Trim",
+                                            nm: "Fill 1",
+                                            mn: "ADBE Vector Graphic - Fill",
                                             hd: false
                                         },
                                         {
@@ -1750,7 +1799,14 @@
                                             a: { a: 0, k: [0, 0], ix: 1 },
                                             s: { a: 0, k: [100, 100], ix: 3 },
                                             r: { a: 0, k: 0, ix: 6 },
-                                            o: { a: 0, k: 100, ix: 7 },
+                                            o: {
+                                                a: 1,
+                                                k: [
+                                                    { i: easing.i, o: easing.o, t: globalStartFrame, s: [0] },
+                                                    { t: globalEndFrame, s: [100] }
+                                                ],
+                                                ix: 7
+                                            },
                                             sk: { a: 0, k: 0, ix: 4 },
                                             sa: { a: 0, k: 0, ix: 5 },
                                             nm: "Transform"
@@ -1797,18 +1853,13 @@
                     const startFrame = (startTime / 1000 / speed) * fps;
                     const endFrame = (endTime / 1000 / speed) * fps;
                     
-                    // This segment's position in overall timeline (0-100%)
-                    const segmentStartPercent = ((startTime - drawingStartTime) / totalDrawingDuration) * 100;
-                    const segmentEndPercent = ((endTime - drawingStartTime) / totalDrawingDuration) * 100;
+                    // This segment's position in overall timeline (0-1)
+                    const segmentStartPercent = (startTime - drawingStartTime) / totalDrawingDuration;
+                    const segmentEndPercent = (endTime - drawingStartTime) / totalDrawingDuration;
                     
-                    // Apply easing to the timeline positions
-                    // This determines WHEN the segment appears based on easing curve
-                    const easedStartProgress = applyEasingToProgress(segmentStartPercent / 100, easingType);
-                    const easedEndProgress = applyEasingToProgress(segmentEndPercent / 100, easingType);
-                    
-                    // This segment's animation within the global timeline
-                    const globalStartFrame = easedStartProgress * overallEndFrame;
-                    const globalEndFrame = easedEndProgress * overallEndFrame;
+                    // Convert to frames - easing will be applied in the animation curve itself
+                    const globalStartFrame = segmentStartPercent * overallEndFrame;
+                    const globalEndFrame = segmentEndPercent * overallEndFrame;
                     
                     // Line cap
                     let lineCap = 2; // round
@@ -1877,7 +1928,7 @@
                                         e: {
                                             a: 1,
                                             k: [
-                                                { i: { x: [1], y: [1] }, o: { x: [0], y: [0] }, t: globalStartFrame, s: [0] },
+                                                { i: easing.i, o: easing.o, t: globalStartFrame, s: [0] },
                                                 { t: globalEndFrame, s: [100] }
                                             ],
                                             ix: 2
@@ -1923,8 +1974,11 @@
             });
             
             console.log(`Generated ${lottieJSON.layers.length} layers for ${strokes.length} strokes`);
-            if (lottieJSON.layers.length > 50) {
-                console.warn(`⚠️ ${lottieJSON.layers.length} layers detected. For best performance, increase smoothing to 70-80% to reduce layer count.`);
+            if (lottieJSON.layers.length > 30) {
+                console.warn(`⚠️ ${lottieJSON.layers.length} layers detected. For smoother performance:`);
+                console.warn(`   • Increase smoothing to 70-80%`);
+                console.warn(`   • Use shorter, simpler strokes`);
+                console.warn(`   • Draw with less pressure variation if not needed`);
             }
             
             return lottieJSON;
