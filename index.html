@@ -1320,6 +1320,12 @@
                 const strokePoints = stroke.points;
                 if (strokePoints.length < 2) return;
                 
+                // Calculate overall drawing timeline ONCE (outside segment loop)
+                const drawingStartTime = strokes[0].points[0].time;
+                const drawingEndTime = strokes[strokes.length - 1].points[strokes[strokes.length - 1].points.length - 1].time;
+                const totalDrawingDuration = drawingEndTime - drawingStartTime;
+                const overallEndFrame = (totalDrawingDuration / 1000 / speed) * fps;
+                
                 const segmentSize = 8;
                 const stepSize = 4; // 50% overlap
                 
@@ -1341,21 +1347,11 @@
                     const startFrame = (startTime / 1000 / speed) * fps;
                     const endFrame = (endTime / 1000 / speed) * fps;
                     
-                    // Calculate progress as percentage of ENTIRE drawing (not just this stroke)
-                    const drawingStartTime = strokes[0].points[0].time;
-                    const drawingEndTime = strokes[strokes.length - 1].points[strokes[strokes.length - 1].points.length - 1].time;
-                    const totalDrawingDuration = drawingEndTime - drawingStartTime;
-                    
                     // This segment's position in overall timeline (0-100%)
                     const segmentStartPercent = ((startTime - drawingStartTime) / totalDrawingDuration) * 100;
                     const segmentEndPercent = ((endTime - drawingStartTime) / totalDrawingDuration) * 100;
                     
-                    // Calculate frames for the OVERALL animation timeline
-                    const overallStartFrame = 0;
-                    const overallEndFrame = (totalDrawingDuration / 1000 / speed) * fps;
-                    
                     // This segment's animation within the global timeline
-                    // It animates from 0 to 100 as the overall progress reaches its time window
                     const globalStartFrame = (segmentStartPercent / 100) * overallEndFrame;
                     const globalEndFrame = (segmentEndPercent / 100) * overallEndFrame;
                     
