@@ -1511,6 +1511,16 @@
             
             let result;
             
+            // Handle custom curve
+            if (easingType === 'custom') {
+                const x1 = parseFloat(curveX1Input.value);
+                const y1 = parseFloat(curveY1Input.value);
+                const x2 = parseFloat(curveX2Input.value);
+                const y2 = parseFloat(curveY2Input.value);
+                result = cubicBezier(t, x1, y1, x2, y2);
+                return result;
+            }
+            
             // Mathematical easing functions
             switch(easingType) {
                 case 'linear':
@@ -1582,18 +1592,10 @@
                     result = t;
             }
             
-            // Debug first few calls
-            if (window.easingDebugCount === undefined) window.easingDebugCount = 0;
-            if (window.easingDebugCount < 5) {
-                console.log(`Easing ${easingType}: t=${t.toFixed(3)} → result=${result.toFixed(3)}`);
-                window.easingDebugCount++;
-            }
-            
             return result;
         }
         
         function generateLottieJSON() {
-            window.easingDebugCount = 0; // Reset debug counter
             const speed = parseFloat(animationSpeedInput.value);
             const fps = 30; // Lower FPS for better performance
             const easingType = easingTypeInput.value;
@@ -1665,9 +1667,10 @@
                 const hasPressureVariation = (maxPressure - minPressure) > 0.3; // 30% variation threshold (increased)
                 
                 if (hasPressureVariation) {
-                    // Use filled shapes with VERY LARGE segments for pressure-sensitive strokes
-                    const segmentSize = 50; // Very large to minimize layer count
-                    const stepSize = 40; // Minimal overlap
+                    // Use filled shapes for pressure-sensitive strokes
+                    // Smaller segments for smoother drawing appearance
+                    const segmentSize = 8;
+                    const stepSize = 6;
                     
                     for (let i = 0; i < strokePoints.length - 1; i += stepSize) {
                         const endIdx = Math.min(i + segmentSize, strokePoints.length);
@@ -1733,13 +1736,14 @@
                         bezierPath.c = true;
                         
                         const startTime = segmentPoints[0].time;
-                        const endTime = segmentPoints[segmentPoints.length - 1].time;
                         
-                        // Apply easing - NO longer modify timing, just use easing curve in animation
-                        const segmentStartPercent = (startTime - drawingStartTime) / totalDrawingDuration;
-                        const segmentEndPercent = (endTime - drawingStartTime) / totalDrawingDuration;
-                        const globalStartFrame = segmentStartPercent * overallEndFrame;
-                        const globalEndFrame = segmentEndPercent * overallEndFrame;
+                        // GLOBAL EASING: Apply easing to determine WHEN this segment appears
+                        // Linear progress through the drawing (0 to 1)
+                        const linearProgress = (startTime - drawingStartTime) / totalDrawingDuration;
+                        // Apply easing to get the EASED appearance time
+                        const easedProgress = applyEasingToProgress(linearProgress, easingType);
+                        // Convert to frame number
+                        const appearFrame = Math.round(easedProgress * overallEndFrame);
                         
                         let opacity = 100;
                         if (stroke.brushType === 'marker') {
@@ -1748,6 +1752,7 @@
                             opacity = 70;
                         }
                         
+                        // Layer appears INSTANTLY at the eased time (no fade)
                         const layer = {
                             ddd: 0,
                             ind: layerIndex + 1,
@@ -1799,14 +1804,7 @@
                                             a: { a: 0, k: [0, 0], ix: 1 },
                                             s: { a: 0, k: [100, 100], ix: 3 },
                                             r: { a: 0, k: 0, ix: 6 },
-                                            o: {
-                                                a: 1,
-                                                k: [
-                                                    { i: easing.i, o: easing.o, t: globalStartFrame, s: [0] },
-                                                    { t: globalEndFrame, s: [100] }
-                                                ],
-                                                ix: 7
-                                            },
+                                            o: { a: 0, k: 100, ix: 7 },
                                             sk: { a: 0, k: 0, ix: 4 },
                                             sa: { a: 0, k: 0, ix: 5 },
                                             nm: "Transform"
@@ -1821,7 +1819,7 @@
                                     hd: false
                                 }
                             ],
-                            ip: 0,
+                            ip: appearFrame,
                             op: overallEndFrame + 30,
                             st: 0,
                             bm: 0
@@ -1832,8 +1830,8 @@
                     }
                 } else {
                     // Use segments for uniform width strokes
-                    const segmentSize = 30; // Very large segments
-                    const stepSize = 25; // Minimal overlap
+                    const segmentSize = 30;
+                    const stepSize = 25;
                 
                 for (let i = 0; i < strokePoints.length - 1; i += stepSize) {
                     const endIdx = Math.min(i + segmentSize, strokePoints.length);
@@ -1850,16 +1848,19 @@
                     
                     const startTime = segmentPoints[0].time;
                     const endTime = segmentPoints[segmentPoints.length - 1].time;
-                    const startFrame = (startTime / 1000 / speed) * fps;
-                    const endFrame = (endTime / 1000 / speed) * fps;
                     
-                    // This segment's position in overall timeline (0-1)
-                    const segmentStartPercent = (startTime - drawingStartTime) / totalDrawingDuration;
-                    const segmentEndPercent = (endTime - drawingStartTime) / totalDrawingDuration;
+                    // GLOBAL EASING: Apply easing to WHEN this segment appears/animates
+                    // Linear progress for start and end of this segment
+                    const linearStartProgress = (startTime - drawingStartTime) / totalDrawingDuration;
+                    const linearEndProgress = (endTime - drawingStartTime) / totalDrawingDuration;
                     
-                    // Convert to frames - easing will be applied in the animation curve itself
-                    const globalStartFrame = segmentStartPercent * overallEndFrame;
-                    const globalEndFrame = segmentEndPercent * overallEndFrame;
+                    // Apply easing function to get EASED times
+                    const easedStartProgress = applyEasingToProgress(linearStartProgress, easingType);
+                    const easedEndProgress = applyEasingToProgress(linearEndProgress, easingType);
+                    
+                    // Convert to frame numbers
+                    const globalStartFrame = Math.round(easedStartProgress * overallEndFrame);
+                    const globalEndFrame = Math.round(easedEndProgress * overallEndFrame);
                     
                     // Line cap
                     let lineCap = 2; // round
@@ -1928,7 +1929,7 @@
                                         e: {
                                             a: 1,
                                             k: [
-                                                { i: easing.i, o: easing.o, t: globalStartFrame, s: [0] },
+                                                { i: { x: [0.5], y: [1] }, o: { x: [0.5], y: [0] }, t: globalStartFrame, s: [0] },
                                                 { t: globalEndFrame, s: [100] }
                                             ],
                                             ix: 2
