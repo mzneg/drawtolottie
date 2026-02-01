@@ -1350,6 +1350,15 @@
                     const segmentStartPercent = ((startTime - drawingStartTime) / totalDrawingDuration) * 100;
                     const segmentEndPercent = ((endTime - drawingStartTime) / totalDrawingDuration) * 100;
                     
+                    // Calculate frames for the OVERALL animation timeline
+                    const overallStartFrame = 0;
+                    const overallEndFrame = (totalDrawingDuration / 1000 / speed) * fps;
+                    
+                    // This segment's animation within the global timeline
+                    // It animates from 0 to 100 as the overall progress reaches its time window
+                    const globalStartFrame = (segmentStartPercent / 100) * overallEndFrame;
+                    const globalEndFrame = (segmentEndPercent / 100) * overallEndFrame;
+                    
                     // Line cap
                     let lineCap = 2; // round
                     if (stroke.brushType === 'marker' || stroke.brushType === 'pencil' || stroke.brushType === 'calligraphy') {
@@ -1417,8 +1426,8 @@
                                         e: {
                                             a: 1,
                                             k: [
-                                                { i: easing.i, o: easing.o, t: 0, s: [segmentStartPercent] },
-                                                { t: (totalDrawingDuration / 1000 / speed) * fps, s: [segmentEndPercent] }
+                                                { i: easing.i, o: easing.o, t: globalStartFrame, s: [0] },
+                                                { t: globalEndFrame, s: [100] }
                                             ],
                                             ix: 2
                                         },
@@ -1451,7 +1460,7 @@
                             }
                         ],
                         ip: 0,
-                        op: totalDuration + 30,
+                        op: overallEndFrame + 30,
                         st: 0,
                         bm: 0
                     };
