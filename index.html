@@ -1230,6 +1230,164 @@
             } : { r: 0, g: 0, b: 0 };
         }
         
+        // Create filled shape with variable width outline for pressure-sensitive strokes
+        function createVariableWidthShape(stroke, points, rgb, drawingStartTime, totalDrawingDuration, overallEndFrame, easingType, speed, fps, layerIndex, strokeIdx, lottieJSON) {
+            // Create variable-width outline
+            const leftEdge = [];
+            const rightEdge = [];
+            
+            for (let i = 0; i < points.length; i++) {
+                const p = points[i];
+                const width = stroke.baseWidth * p.pressure;
+                const halfWidth = width / 2;
+                
+                // Calculate perpendicular direction
+                let perpX, perpY;
+                if (i === 0) {
+                    const next = points[i + 1];
+                    const dx = next.x - p.x;
+                    const dy = next.y - p.y;
+                    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                    perpX = -dy / len;
+                    perpY = dx / len;
+                } else if (i === points.length - 1) {
+                    const prev = points[i - 1];
+                    const dx = p.x - prev.x;
+                    const dy = p.y - prev.y;
+                    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                    perpX = -dy / len;
+                    perpY = dx / len;
+                } else {
+                    const prev = points[i - 1];
+                    const next = points[i + 1];
+                    const dx = next.x - prev.x;
+                    const dy = next.y - prev.y;
+                    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+                    perpX = -dy / len;
+                    perpY = dx / len;
+                }
+                
+                leftEdge.push({
+                    x: p.x + perpX * halfWidth,
+                    y: p.y + perpY * halfWidth,
+                    pressure: 1,
+                    time: p.time
+                });
+                
+                rightEdge.push({
+                    x: p.x - perpX * halfWidth,
+                    y: p.y - perpY * halfWidth,
+                    pressure: 1,
+                    time: p.time
+                });
+            }
+            
+            // Create closed shape path
+            const shapePoints = [...leftEdge, ...rightEdge.reverse()];
+            const bezierPath = createSmoothBezierPath(shapePoints);
+            bezierPath.c = true; // Close the path
+            
+            const startTime = points[0].time;
+            const endTime = points[points.length - 1].time;
+            
+            // Apply easing to timing
+            const strokeStartPercent = ((startTime - drawingStartTime) / totalDrawingDuration);
+            const strokeEndPercent = ((endTime - drawingStartTime) / totalDrawingDuration);
+            const easedStartProgress = applyEasingToProgress(strokeStartPercent, easingType);
+            const easedEndProgress = applyEasingToProgress(strokeEndPercent, easingType);
+            const globalStartFrame = easedStartProgress * overallEndFrame;
+            const globalEndFrame = easedEndProgress * overallEndFrame;
+            
+            // Opacity
+            let opacity = 100;
+            if (stroke.brushType === 'marker') {
+                opacity = 60;
+            } else if (stroke.brushType === 'pencil') {
+                opacity = 70;
+            }
+            
+            const layer = {
+                ddd: 0,
+                ind: layerIndex + 1,
+                ty: 4,
+                nm: `Stroke ${strokeIdx + 1}`,
+                sr: 1,
+                ks: {
+                    o: { a: 0, k: opacity, ix: 11 },
+                    r: { a: 0, k: 0, ix: 10 },
+                    p: { a: 0, k: [0, 0, 0], ix: 2 },
+                    a: { a: 0, k: [0, 0, 0], ix: 1 },
+                    s: { a: 0, k: [100, 100, 100], ix: 6 }
+                },
+                ao: 0,
+                shapes: [
+                    {
+                        ty: "gr",
+                        it: [
+                            {
+                                ind: 0,
+                                ty: "sh",
+                                ix: 1,
+                                ks: {
+                                    a: 0,
+                                    k: bezierPath,
+                                    ix: 2
+                                },
+                                nm: "Path 1",
+                                mn: "ADBE Vector Shape - Group",
+                                hd: false
+                            },
+                            {
+                                ty: "fl",
+                                c: {
+                                    a: 0,
+                                    k: [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1],
+                                    ix: 4
+                                },
+                                o: { a: 0, k: 100, ix: 5 },
+                                r: 1,
+                                bm: 0,
+                                nm: "Fill 1",
+                                mn: "ADBE Vector Graphic - Fill",
+                                hd: false
+                            },
+                            {
+                                ty: "tr",
+                                p: { a: 0, k: [0, 0], ix: 2 },
+                                a: { a: 0, k: [0, 0], ix: 1 },
+                                s: { a: 0, k: [100, 100], ix: 3 },
+                                r: { a: 0, k: 0, ix: 6 },
+                                o: {
+                                    a: 1,
+                                    k: [
+                                        { i: { x: [1], y: [1] }, o: { x: [0], y: [0] }, t: globalStartFrame, s: [0] },
+                                        { t: globalStartFrame + 1, s: [100] }
+                                    ],
+                                    ix: 7
+                                },
+                                sk: { a: 0, k: 0, ix: 4 },
+                                sa: { a: 0, k: 0, ix: 5 },
+                                nm: "Transform"
+                            }
+                        ],
+                        nm: "Shape 1",
+                        np: 3,
+                        cix: 2,
+                        bm: 0,
+                        ix: 1,
+                        mn: "ADBE Vector Group",
+                        hd: false
+                    }
+                ],
+                ip: 0,
+                op: overallEndFrame + 30,
+                st: 0,
+                bm: 0
+            };
+            
+            lottieJSON.layers.push(layer);
+        }
+        
         function getEasingValues(easingType) {
             // Custom curve
             if (easingType === 'custom') {
@@ -1258,6 +1416,38 @@
                 springWobbly: { i: { x: [0.8], y: [-0.9] }, o: { x: [0.2], y: [1.9] } } // Max overshoot
             };
             return easings[easingType] || easings.linear;
+        }
+        
+        // Apply easing curve to a progress value (0-1)
+        function applyEasingToProgress(t, easingType) {
+            if (t <= 0) return 0;
+            if (t >= 1) return 1;
+            
+            const easing = getEasingValues(easingType);
+            
+            // For linear, just return t
+            if (easingType === 'linear') return t;
+            
+            // Cubic bezier approximation for easing curves
+            // Using the control points from the easing curve
+            const x1 = easing.i.x[0];
+            const y1 = easing.i.y[0];
+            const x2 = easing.o.x[0];
+            const y2 = easing.o.y[0];
+            
+            // Simple cubic bezier evaluation
+            // For more accuracy, you'd solve for t given x, but this approximation works
+            const ease = (t) => {
+                const t2 = t * t;
+                const t3 = t2 * t;
+                const mt = 1 - t;
+                const mt2 = mt * mt;
+                const mt3 = mt2 * mt;
+                
+                return (3 * mt2 * t * y1) + (3 * mt * t2 * y2) + t3;
+            };
+            
+            return ease(t);
         }
         
         function generateLottieJSON() {
@@ -1316,18 +1506,29 @@
                 const rgb = hexToRgb(stroke.color);
                 const easing = getEasingValues(easingType);
                 
-                // Use segments to show pressure variation
                 const strokePoints = stroke.points;
                 if (strokePoints.length < 2) return;
                 
-                // Calculate overall drawing timeline ONCE (outside segment loop)
+                // Calculate overall drawing timeline ONCE
                 const drawingStartTime = strokes[0].points[0].time;
                 const drawingEndTime = strokes[strokes.length - 1].points[strokes[strokes.length - 1].points.length - 1].time;
                 const totalDrawingDuration = drawingEndTime - drawingStartTime;
                 const overallEndFrame = (totalDrawingDuration / 1000 / speed) * fps;
                 
-                const segmentSize = 8;
-                const stepSize = 4; // 50% overlap
+                // Check if stroke has significant pressure variation
+                const pressures = strokePoints.map(p => p.pressure);
+                const minPressure = Math.min(...pressures);
+                const maxPressure = Math.max(...pressures);
+                const hasPressureVariation = (maxPressure - minPressure) > 0.2; // 20% variation threshold
+                
+                if (hasPressureVariation) {
+                    // Create filled shape with variable width for pressure-sensitive strokes
+                    createVariableWidthShape(stroke, strokePoints, rgb, drawingStartTime, totalDrawingDuration, overallEndFrame, easingType, speed, fps, layerIndex, strokeIdx, lottieJSON);
+                    layerIndex++;
+                } else {
+                    // Use segments for uniform width strokes
+                    const segmentSize = 8;
+                    const stepSize = 4; // 50% overlap
                 
                 for (let i = 0; i < strokePoints.length - 1; i += stepSize) {
                     const endIdx = Math.min(i + segmentSize, strokePoints.length);
@@ -1351,9 +1552,14 @@
                     const segmentStartPercent = ((startTime - drawingStartTime) / totalDrawingDuration) * 100;
                     const segmentEndPercent = ((endTime - drawingStartTime) / totalDrawingDuration) * 100;
                     
+                    // Apply easing to the timeline positions
+                    // This determines WHEN the segment appears based on easing curve
+                    const easedStartProgress = applyEasingToProgress(segmentStartPercent / 100, easingType);
+                    const easedEndProgress = applyEasingToProgress(segmentEndPercent / 100, easingType);
+                    
                     // This segment's animation within the global timeline
-                    const globalStartFrame = (segmentStartPercent / 100) * overallEndFrame;
-                    const globalEndFrame = (segmentEndPercent / 100) * overallEndFrame;
+                    const globalStartFrame = easedStartProgress * overallEndFrame;
+                    const globalEndFrame = easedEndProgress * overallEndFrame;
                     
                     // Line cap
                     let lineCap = 2; // round
@@ -1422,7 +1628,7 @@
                                         e: {
                                             a: 1,
                                             k: [
-                                                { i: easing.i, o: easing.o, t: globalStartFrame, s: [0] },
+                                                { i: { x: [1], y: [1] }, o: { x: [0], y: [0] }, t: globalStartFrame, s: [0] },
                                                 { t: globalEndFrame, s: [100] }
                                             ],
                                             ix: 2
@@ -1464,6 +1670,7 @@
                     lottieJSON.layers.push(layer);
                     layerIndex++;
                 }
+                } // end else (uniform width strokes)
             });
             
             return lottieJSON;
