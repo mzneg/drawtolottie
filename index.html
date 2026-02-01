@@ -229,8 +229,8 @@
             </div>
             <div class="setting-group">
                 <label>Smoothing:</label>
-                <input type="range" id="smoothingStrength" min="0" max="100" value="60" style="width: 120px;">
-                <span id="smoothingValue">60%</span>
+                <input type="range" id="smoothingStrength" min="0" max="100" value="70" style="width: 120px;">
+                <span id="smoothingValue">70%</span>
             </div>
         </div>
         
@@ -1473,178 +1473,6 @@
         }
         
         // Create filled shape segments with variable width for pressure-sensitive strokes
-        function createVariableWidthShape(stroke, points, rgb, drawingStartTime, totalDrawingDuration, overallEndFrame, easingType, speed, fps, layerIndex, strokeIdx, lottieJSON) {
-            // Use larger segments to keep layer count low
-            const segmentSize = 20; // Larger segments
-            const stepSize = 15; // Less overlap = fewer layers
-            
-            for (let i = 0; i < points.length - 1; i += stepSize) {
-                const endIdx = Math.min(i + segmentSize, points.length);
-                const segmentPoints = points.slice(i, endIdx);
-                
-                if (segmentPoints.length < 2) continue;
-                
-                // Create variable-width outline for this segment
-                const leftEdge = [];
-                const rightEdge = [];
-                
-                for (let j = 0; j < segmentPoints.length; j++) {
-                    const p = segmentPoints[j];
-                    const width = stroke.baseWidth * p.pressure;
-                    const halfWidth = width / 2;
-                    
-                    // Calculate perpendicular direction
-                    let perpX, perpY;
-                    const globalIdx = i + j;
-                    
-                    if (globalIdx === 0) {
-                        const next = points[globalIdx + 1];
-                        const dx = next.x - p.x;
-                        const dy = next.y - p.y;
-                        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                        perpX = -dy / len;
-                        perpY = dx / len;
-                    } else if (globalIdx === points.length - 1) {
-                        const prev = points[globalIdx - 1];
-                        const dx = p.x - prev.x;
-                        const dy = p.y - prev.y;
-                        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                        perpX = -dy / len;
-                        perpY = dx / len;
-                    } else {
-                        const prev = points[Math.max(0, globalIdx - 1)];
-                        const next = points[Math.min(points.length - 1, globalIdx + 1)];
-                        const dx = next.x - prev.x;
-                        const dy = next.y - prev.y;
-                        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                        perpX = -dy / len;
-                        perpY = dx / len;
-                    }
-                    
-                    leftEdge.push({
-                        x: p.x + perpX * halfWidth,
-                        y: p.y + perpY * halfWidth,
-                        pressure: 1,
-                        time: p.time
-                    });
-                    
-                    rightEdge.push({
-                        x: p.x - perpX * halfWidth,
-                        y: p.y - perpY * halfWidth,
-                        pressure: 1,
-                        time: p.time
-                    });
-                }
-                
-                // Create closed shape path
-                const shapePoints = [...leftEdge, ...rightEdge.reverse()];
-                const bezierPath = createSmoothBezierPath(shapePoints);
-                bezierPath.c = true; // Close the path
-                
-                const startTime = segmentPoints[0].time;
-                const endTime = segmentPoints[segmentPoints.length - 1].time;
-                
-                // Apply easing to timing
-                const segmentStartPercent = ((startTime - drawingStartTime) / totalDrawingDuration);
-                const segmentEndPercent = ((endTime - drawingStartTime) / totalDrawingDuration);
-                const easedStartProgress = applyEasingToProgress(segmentStartPercent, easingType);
-                const easedEndProgress = applyEasingToProgress(segmentEndPercent, easingType);
-                const globalStartFrame = easedStartProgress * overallEndFrame;
-                const globalEndFrame = easedEndProgress * overallEndFrame;
-                
-                // Opacity
-                let opacity = 100;
-                if (stroke.brushType === 'marker') {
-                    opacity = 60;
-                } else if (stroke.brushType === 'pencil') {
-                    opacity = 70;
-                }
-                
-                const layer = {
-                    ddd: 0,
-                    ind: layerIndex + 1,
-                    ty: 4,
-                    nm: `Stroke ${strokeIdx + 1} Seg ${Math.floor(i / stepSize)}`,
-                    sr: 1,
-                    ks: {
-                        o: { a: 0, k: opacity, ix: 11 },
-                        r: { a: 0, k: 0, ix: 10 },
-                        p: { a: 0, k: [0, 0, 0], ix: 2 },
-                        a: { a: 0, k: [0, 0, 0], ix: 1 },
-                        s: { a: 0, k: [100, 100, 100], ix: 6 }
-                    },
-                    ao: 0,
-                    shapes: [
-                        {
-                            ty: "gr",
-                            it: [
-                                {
-                                    ind: 0,
-                                    ty: "sh",
-                                    ix: 1,
-                                    ks: {
-                                        a: 0,
-                                        k: bezierPath,
-                                        ix: 2
-                                    },
-                                    nm: "Path 1",
-                                    mn: "ADBE Vector Shape - Group",
-                                    hd: false
-                                },
-                                {
-                                    ty: "fl",
-                                    c: {
-                                        a: 0,
-                                        k: [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1],
-                                        ix: 4
-                                    },
-                                    o: { a: 0, k: 100, ix: 5 },
-                                    r: 1,
-                                    bm: 0,
-                                    nm: "Fill 1",
-                                    mn: "ADBE Vector Graphic - Fill",
-                                    hd: false
-                                },
-                                {
-                                    ty: "tr",
-                                    p: { a: 0, k: [0, 0], ix: 2 },
-                                    a: { a: 0, k: [0, 0], ix: 1 },
-                                    s: { a: 0, k: [100, 100], ix: 3 },
-                                    r: { a: 0, k: 0, ix: 6 },
-                                    o: {
-                                        a: 1,
-                                        k: [
-                                            { i: { x: [1], y: [1] }, o: { x: [0], y: [0] }, t: globalStartFrame, s: [0] },
-                                            { t: globalStartFrame + 1, s: [100] }
-                                        ],
-                                        ix: 7
-                                    },
-                                    sk: { a: 0, k: 0, ix: 4 },
-                                    sa: { a: 0, k: 0, ix: 5 },
-                                    nm: "Transform"
-                                }
-                            ],
-                            nm: "Shape 1",
-                            np: 3,
-                            cix: 2,
-                            bm: 0,
-                            ix: 1,
-                            mn: "ADBE Vector Group",
-                            hd: false
-                        }
-                    ],
-                    ip: 0,
-                    op: overallEndFrame + 30,
-                    st: 0,
-                    bm: 0
-                };
-                
-                lottieJSON.layers.push(layer);
-                layerIndex++;
-            }
-            
-            return layerIndex;
-        }
         
         function getEasingValues(easingType) {
             // Custom curve
@@ -1815,12 +1643,141 @@
                 const hasPressureVariation = (maxPressure - minPressure) > 0.2; // 20% variation threshold
                 
                 if (hasPressureVariation) {
-                    // Create filled shape segments with variable width for pressure-sensitive strokes
-                    layerIndex = createVariableWidthShape(stroke, strokePoints, rgb, drawingStartTime, totalDrawingDuration, overallEndFrame, easingType, speed, fps, layerIndex, strokeIdx, lottieJSON);
+                    // Use larger stroked segments for pressure-sensitive strokes (lighter than filled shapes)
+                    const segmentSize = 30; // Very large segments
+                    const stepSize = 25; // Minimal overlap
+                    
+                    for (let i = 0; i < strokePoints.length - 1; i += stepSize) {
+                        const endIdx = Math.min(i + segmentSize, strokePoints.length);
+                        const segmentPoints = strokePoints.slice(i, endIdx);
+                        
+                        if (segmentPoints.length < 2) continue;
+                        
+                        // Average pressure for this segment
+                        const avgPressure = segmentPoints.reduce((sum, p) => sum + p.pressure, 0) / segmentPoints.length;
+                        const segmentWidth = stroke.baseWidth * avgPressure;
+                        
+                        // Create smooth bezier path for segment
+                        const bezierPath = createSmoothBezierPath(segmentPoints);
+                        
+                        const startTime = segmentPoints[0].time;
+                        const endTime = segmentPoints[segmentPoints.length - 1].time;
+                        
+                        // Apply easing to timing
+                        const segmentStartPercent = ((startTime - drawingStartTime) / totalDrawingDuration);
+                        const segmentEndPercent = ((endTime - drawingStartTime) / totalDrawingDuration);
+                        const easedStartProgress = applyEasingToProgress(segmentStartPercent, easingType);
+                        const easedEndProgress = applyEasingToProgress(segmentEndPercent, easingType);
+                        const globalStartFrame = easedStartProgress * overallEndFrame;
+                        const globalEndFrame = easedEndProgress * overallEndFrame;
+                        
+                        // Opacity
+                        let opacity = 100;
+                        if (stroke.brushType === 'marker') {
+                            opacity = 60;
+                        } else if (stroke.brushType === 'pencil') {
+                            opacity = 70;
+                        }
+                        
+                        const layer = {
+                            ddd: 0,
+                            ind: layerIndex + 1,
+                            ty: 4,
+                            nm: `Stroke ${strokeIdx + 1} Seg ${Math.floor(i / stepSize)}`,
+                            sr: 1,
+                            ks: {
+                                o: { a: 0, k: opacity, ix: 11 },
+                                r: { a: 0, k: 0, ix: 10 },
+                                p: { a: 0, k: [0, 0, 0], ix: 2 },
+                                a: { a: 0, k: [0, 0, 0], ix: 1 },
+                                s: { a: 0, k: [100, 100, 100], ix: 6 }
+                            },
+                            ao: 0,
+                            shapes: [
+                                {
+                                    ty: "gr",
+                                    it: [
+                                        {
+                                            ind: 0,
+                                            ty: "sh",
+                                            ix: 1,
+                                            ks: {
+                                                a: 0,
+                                                k: bezierPath,
+                                                ix: 2
+                                            },
+                                            nm: "Path 1",
+                                            mn: "ADBE Vector Shape - Group",
+                                            hd: false
+                                        },
+                                        {
+                                            ty: "st",
+                                            c: {
+                                                a: 0,
+                                                k: [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1],
+                                                ix: 3
+                                            },
+                                            o: { a: 0, k: 100, ix: 4 },
+                                            w: { a: 0, k: segmentWidth, ix: 5 },
+                                            lc: 2,
+                                            lj: 2,
+                                            bm: 0,
+                                            nm: "Stroke 1",
+                                            mn: "ADBE Vector Graphic - Stroke",
+                                            hd: false
+                                        },
+                                        {
+                                            ty: "tm",
+                                            s: { a: 0, k: 0, ix: 1 },
+                                            e: {
+                                                a: 1,
+                                                k: [
+                                                    { i: { x: [1], y: [1] }, o: { x: [0], y: [0] }, t: globalStartFrame, s: [0] },
+                                                    { t: globalEndFrame, s: [100] }
+                                                ],
+                                                ix: 2
+                                            },
+                                            o: { a: 0, k: 0, ix: 3 },
+                                            m: 1,
+                                            ix: 3,
+                                            nm: "Trim Paths 1",
+                                            mn: "ADBE Vector Filter - Trim",
+                                            hd: false
+                                        },
+                                        {
+                                            ty: "tr",
+                                            p: { a: 0, k: [0, 0], ix: 2 },
+                                            a: { a: 0, k: [0, 0], ix: 1 },
+                                            s: { a: 0, k: [100, 100], ix: 3 },
+                                            r: { a: 0, k: 0, ix: 6 },
+                                            o: { a: 0, k: 100, ix: 7 },
+                                            sk: { a: 0, k: 0, ix: 4 },
+                                            sa: { a: 0, k: 0, ix: 5 },
+                                            nm: "Transform"
+                                        }
+                                    ],
+                                    nm: "Shape 1",
+                                    np: 3,
+                                    cix: 2,
+                                    bm: 0,
+                                    ix: 1,
+                                    mn: "ADBE Vector Group",
+                                    hd: false
+                                }
+                            ],
+                            ip: 0,
+                            op: overallEndFrame + 30,
+                            st: 0,
+                            bm: 0
+                        };
+                        
+                        lottieJSON.layers.push(layer);
+                        layerIndex++;
+                    }
                 } else {
                     // Use segments for uniform width strokes
-                    const segmentSize = 20; // Larger segments
-                    const stepSize = 15; // Less overlap
+                    const segmentSize = 30; // Very large segments
+                    const stepSize = 25; // Minimal overlap
                 
                 for (let i = 0; i < strokePoints.length - 1; i += stepSize) {
                     const endIdx = Math.min(i + segmentSize, strokePoints.length);
@@ -1966,8 +1923,8 @@
             });
             
             console.log(`Generated ${lottieJSON.layers.length} layers for ${strokes.length} strokes`);
-            if (lottieJSON.layers.length > 100) {
-                console.warn('⚠️ High layer count detected. Consider increasing smoothing (60-80%) for better performance.');
+            if (lottieJSON.layers.length > 50) {
+                console.warn(`⚠️ ${lottieJSON.layers.length} layers detected. For best performance, increase smoothing to 70-80% to reduce layer count.`);
             }
             
             return lottieJSON;
