@@ -229,8 +229,8 @@
             </div>
             <div class="setting-group">
                 <label>Smoothing:</label>
-                <input type="range" id="smoothingStrength" min="0" max="100" value="40" style="width: 120px;">
-                <span id="smoothingValue">40%</span>
+                <input type="range" id="smoothingStrength" min="0" max="100" value="60" style="width: 120px;">
+                <span id="smoothingValue">60%</span>
             </div>
         </div>
         
@@ -317,6 +317,8 @@
             <button class="btn-secondary" id="replayBtn">Replay Drawing</button>
             <button class="btn-secondary" id="previewAnimBtn">Preview Lottie</button>
             <button class="btn-success" id="exportBtn">Export Lottie JSON</button>
+            <button class="btn-success" id="exportGifBtn">Export Transparent GIF</button>
+            <button class="btn-success" id="exportSvgBtn">Export Animated SVG</button>
         </div>
         
         <div class="status" id="status"></div>
@@ -362,6 +364,8 @@
         const replayBtn = document.getElementById('replayBtn');
         const previewAnimBtn = document.getElementById('previewAnimBtn');
         const exportBtn = document.getElementById('exportBtn');
+        const exportGifBtn = document.getElementById('exportGifBtn');
+        const exportSvgBtn = document.getElementById('exportSvgBtn');
         const status = document.getElementById('status');
         const previewArea = document.getElementById('previewArea');
         
@@ -1221,6 +1225,37 @@
             showStatus('Lottie JSON exported successfully!');
         });
         
+        exportGifBtn.addEventListener('click', async () => {
+            if (strokes.length === 0) {
+                showStatus('Nothing to export. Draw something first.');
+                return;
+            }
+            
+            showStatus('Generating transparent GIF... This may take a moment.');
+            try {
+                await exportTransparentGif();
+                showStatus('Transparent GIF exported successfully!');
+            } catch (error) {
+                showStatus('Error generating GIF: ' + error.message);
+                console.error(error);
+            }
+        });
+        
+        exportSvgBtn.addEventListener('click', () => {
+            if (strokes.length === 0) {
+                showStatus('Nothing to export. Draw something first.');
+                return;
+            }
+            
+            try {
+                exportAnimatedSVG();
+                showStatus('Animated SVG exported successfully!');
+            } catch (error) {
+                showStatus('Error generating SVG: ' + error.message);
+                console.error(error);
+            }
+        });
+        
         function hexToRgb(hex) {
             const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
             return result ? {
@@ -1230,11 +1265,218 @@
             } : { r: 0, g: 0, b: 0 };
         }
         
+        // Export transparent GIF using canvas frames
+        async function exportTransparentGif() {
+            const speed = parseFloat(animationSpeedInput.value);
+            const fps = 30;
+            
+            // Calculate duration
+            const maxTime = Math.max(...strokes.flatMap(s => s.points.map(p => p.time)));
+            const totalDuration = (maxTime / 1000 / speed);
+            const frameCount = Math.ceil(totalDuration * fps);
+            const frameDelay = 1000 / fps;
+            
+            // Create a temporary canvas for rendering
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = canvas.width;
+            tempCanvas.height = canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            
+            // Use GIF.js library (loading from CDN)
+            const script = document.createElement('script');
+            script.src = 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js';
+            document.head.appendChild(script);
+            
+            await new Promise((resolve, reject) => {
+                script.onload = resolve;
+                script.onerror = reject;
+            });
+            
+            const gif = new GIF({
+                workers: 2,
+                quality: 10,
+                width: canvas.width,
+                height: canvas.height,
+                transparent: 0x000000, // Use black as transparent color
+                workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js'
+            });
+            
+            // Render each frame
+            for (let frame = 0; frame <= frameCount; frame++) {
+                const currentTime = (frame / fps) * 1000 * speed;
+                
+                // Clear with transparent background (black will become transparent)
+                tempCtx.fillStyle = '#000000';
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                
+                // Draw strokes up to current time
+                strokes.forEach(stroke => {
+                    const relevantPoints = stroke.points.filter(p => p.time <= currentTime);
+                    if (relevantPoints.length < 2) return;
+                    
+                    tempCtx.strokeStyle = stroke.color;
+                    tempCtx.globalAlpha = 1.0;
+                    
+                    if (stroke.brushType === 'marker') {
+                        tempCtx.globalAlpha = 0.6;
+                    } else if (stroke.brushType === 'pencil') {
+                        tempCtx.globalAlpha = 0.7;
+                    }
+                    
+                    tempCtx.lineCap = 'round';
+                    tempCtx.lineJoin = 'round';
+                    
+                    for (let i = 0; i < relevantPoints.length - 1; i++) {
+                        const p1 = relevantPoints[i];
+                        const p2 = relevantPoints[i + 1];
+                        const lineWidth = stroke.baseWidth * ((p1.pressure + p2.pressure) / 2);
+                        
+                        tempCtx.lineWidth = lineWidth;
+                        tempCtx.beginPath();
+                        
+                        if (i === 0) {
+                            tempCtx.moveTo(p1.x, p1.y);
+                        }
+                        
+                        const midX = (p1.x + p2.x) / 2;
+                        const midY = (p1.y + p2.y) / 2;
+                        tempCtx.quadraticCurveTo(p1.x, p1.y, midX, midY);
+                        tempCtx.stroke();
+                    }
+                });
+                
+                tempCtx.globalAlpha = 1.0;
+                gif.addFrame(tempCtx, {copy: true, delay: frameDelay});
+            }
+            
+            gif.on('finished', function(blob) {
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'drawing-animation.gif';
+                a.click();
+                URL.revokeObjectURL(url);
+            });
+            
+            gif.render();
+        }
+        
+        // Export animated SVG
+        function exportAnimatedSVG() {
+            const speed = parseFloat(animationSpeedInput.value);
+            const easingType = easingTypeInput.value;
+            
+            // Calculate total duration
+            const maxTime = Math.max(...strokes.flatMap(s => s.points.map(p => p.time)));
+            const totalDuration = (maxTime / 1000 / speed);
+            
+            // Start building SVG
+            let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${canvas.width} ${canvas.height}">
+    <defs>
+        <style>
+            .stroke-anim { animation-timing-function: ${getEasingCSS(easingType)}; }
+        </style>
+    </defs>
+    <g id="drawing">
+`;
+            
+            // Add each stroke as a path with animation
+            strokes.forEach((stroke, strokeIdx) => {
+                const points = stroke.points;
+                if (points.length < 2) return;
+                
+                // Calculate timing for this stroke
+                const strokeStartTime = (points[0].time / 1000 / speed);
+                const strokeEndTime = (points[points.length - 1].time / 1000 / speed);
+                const strokeDuration = strokeEndTime - strokeStartTime;
+                
+                // Build SVG path
+                let pathData = `M ${points[0].x},${points[0].y}`;
+                
+                for (let i = 0; i < points.length - 1; i++) {
+                    const p1 = points[i];
+                    const p2 = points[i + 1];
+                    const midX = (p1.x + p2.x) / 2;
+                    const midY = (p1.y + p2.y) / 2;
+                    pathData += ` Q ${p1.x},${p1.y} ${midX},${midY}`;
+                }
+                
+                // Average stroke width based on pressure
+                const avgPressure = points.reduce((sum, p) => sum + p.pressure, 0) / points.length;
+                const strokeWidth = stroke.baseWidth * avgPressure;
+                
+                // Opacity based on brush type
+                let opacity = 1;
+                if (stroke.brushType === 'marker') {
+                    opacity = 0.6;
+                } else if (stroke.brushType === 'pencil') {
+                    opacity = 0.7;
+                }
+                
+                // Calculate path length for animation
+                svg += `
+        <path id="stroke-${strokeIdx}" 
+              d="${pathData}" 
+              fill="none" 
+              stroke="${stroke.color}" 
+              stroke-width="${strokeWidth}" 
+              stroke-linecap="round" 
+              stroke-linejoin="round" 
+              opacity="${opacity}"
+              pathLength="100">
+            <animate attributeName="stroke-dasharray" 
+                     from="0 100" 
+                     to="100 0" 
+                     begin="${strokeStartTime}s" 
+                     dur="${strokeDuration}s" 
+                     fill="freeze" 
+                     class="stroke-anim"/>
+            <animate attributeName="stroke-dashoffset" 
+                     from="0" 
+                     to="0" 
+                     begin="${strokeStartTime}s" 
+                     dur="${strokeDuration}s" 
+                     fill="freeze"/>
+        </path>`;
+            });
+            
+            svg += `
+    </g>
+</svg>`;
+            
+            // Download SVG
+            const blob = new Blob([svg], { type: 'image/svg+xml' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'drawing-animation.svg';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        // Convert easing type to CSS timing function
+        function getEasingCSS(easingType) {
+            const easings = {
+                linear: 'linear',
+                easeIn: 'cubic-bezier(0.42, 0, 1, 1)',
+                easeOut: 'cubic-bezier(0, 0, 0.58, 1)',
+                easeInOut: 'cubic-bezier(0.42, 0, 0.58, 1)',
+                anticipate: 'cubic-bezier(0.36, 0, 0.66, -0.56)',
+                overshoot: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+                spring: 'cubic-bezier(0.16, 1, 0.3, 1)',
+                springBouncy: 'cubic-bezier(0.68, -0.6, 0.32, 1.6)',
+                springSnappy: 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+                springGentle: 'cubic-bezier(0.25, 0.1, 0.25, 1)',
+                springWobbly: 'cubic-bezier(0.8, -0.9, 0.2, 1.9)'
+            };
+            return easings[easingType] || 'linear';
+        }
+        
         // Create filled shape segments with variable width for pressure-sensitive strokes
         function createVariableWidthShape(stroke, points, rgb, drawingStartTime, totalDrawingDuration, overallEndFrame, easingType, speed, fps, layerIndex, strokeIdx, lottieJSON) {
-            // Break into small segments to create animation
-            const segmentSize = 6;
-            const stepSize = 3; // 50% overlap
+            // Use larger segments to keep layer count low
+            const segmentSize = 20; // Larger segments
+            const stepSize = 15; // Less overlap = fewer layers
             
             for (let i = 0; i < points.length - 1; i += stepSize) {
                 const endIdx = Math.min(i + segmentSize, points.length);
@@ -1503,7 +1745,7 @@
         
         function generateLottieJSON() {
             const speed = parseFloat(animationSpeedInput.value);
-            const fps = 60;
+            const fps = 30; // Lower FPS for better performance
             const easingType = easingTypeInput.value;
             const loopType = loopTypeInput.value;
             
@@ -1577,8 +1819,8 @@
                     layerIndex = createVariableWidthShape(stroke, strokePoints, rgb, drawingStartTime, totalDrawingDuration, overallEndFrame, easingType, speed, fps, layerIndex, strokeIdx, lottieJSON);
                 } else {
                     // Use segments for uniform width strokes
-                    const segmentSize = 8;
-                    const stepSize = 4; // 50% overlap
+                    const segmentSize = 20; // Larger segments
+                    const stepSize = 15; // Less overlap
                 
                 for (let i = 0; i < strokePoints.length - 1; i += stepSize) {
                     const endIdx = Math.min(i + segmentSize, strokePoints.length);
@@ -1722,6 +1964,11 @@
                 }
                 } // end else (uniform width strokes)
             });
+            
+            console.log(`Generated ${lottieJSON.layers.length} layers for ${strokes.length} strokes`);
+            if (lottieJSON.layers.length > 100) {
+                console.warn('⚠️ High layer count detected. Consider increasing smoothing (60-80%) for better performance.');
+            }
             
             return lottieJSON;
         }
