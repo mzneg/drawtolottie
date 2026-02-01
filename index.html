@@ -1316,82 +1316,69 @@
                 const rgb = hexToRgb(stroke.color);
                 const easing = getEasingValues(easingType);
                 
-                // Points are already smoothed - use entire stroke as one path
+                // Use segments to show pressure variation
                 const strokePoints = stroke.points;
-                
                 if (strokePoints.length < 2) return;
                 
-                // Create smooth bezier path for entire stroke
-                const bezierPath = createSmoothBezierPath(strokePoints);
+                const segmentSize = 8;
+                const stepSize = 4; // 50% overlap
                 
-                const startTime = strokePoints[0].time;
-                const endTime = strokePoints[strokePoints.length - 1].time;
-                const startFrame = (startTime / 1000 / speed) * fps;
-                const endFrame = (endTime / 1000 / speed) * fps;
-                
-                // Create animated width keyframes for pressure
-                const widthKeyframes = [];
-                const sampleRate = Math.max(1, Math.floor(strokePoints.length / 30)); // Max 30 keyframes
-                
-                for (let i = 0; i < strokePoints.length; i += sampleRate) {
-                    const p = strokePoints[i];
-                    const t = p.time - startTime;
-                    const frame = startFrame + (t / 1000 / speed) * fps;
-                    const width = stroke.baseWidth * p.pressure;
+                for (let i = 0; i < strokePoints.length - 1; i += stepSize) {
+                    const endIdx = Math.min(i + segmentSize, strokePoints.length);
+                    const segmentPoints = strokePoints.slice(i, endIdx);
                     
-                    if (i === 0) {
-                        widthKeyframes.push({
-                            i: { x: [0.667], y: [1] },
-                            o: { x: [0.333], y: [0] },
-                            t: frame,
-                            s: [width]
-                        });
-                    } else {
-                        widthKeyframes.push({
-                            i: { x: [0.667], y: [1] },
-                            o: { x: [0.333], y: [0] },
-                            t: frame,
-                            s: [width]
-                        });
+                    if (segmentPoints.length < 2) continue;
+                    
+                    // Average pressure for this segment
+                    const avgPressure = segmentPoints.reduce((sum, p) => sum + p.pressure, 0) / segmentPoints.length;
+                    const segmentWidth = stroke.baseWidth * avgPressure;
+                    
+                    // Create smooth bezier path for segment
+                    const bezierPath = createSmoothBezierPath(segmentPoints);
+                    
+                    const startTime = segmentPoints[0].time;
+                    const endTime = segmentPoints[segmentPoints.length - 1].time;
+                    const startFrame = (startTime / 1000 / speed) * fps;
+                    const endFrame = (endTime / 1000 / speed) * fps;
+                    
+                    // Calculate progress as percentage of ENTIRE drawing (not just this stroke)
+                    const drawingStartTime = strokes[0].points[0].time;
+                    const drawingEndTime = strokes[strokes.length - 1].points[strokes[strokes.length - 1].points.length - 1].time;
+                    const totalDrawingDuration = drawingEndTime - drawingStartTime;
+                    
+                    // This segment's position in overall timeline (0-100%)
+                    const segmentStartPercent = ((startTime - drawingStartTime) / totalDrawingDuration) * 100;
+                    const segmentEndPercent = ((endTime - drawingStartTime) / totalDrawingDuration) * 100;
+                    
+                    // Line cap
+                    let lineCap = 2; // round
+                    if (stroke.brushType === 'marker' || stroke.brushType === 'pencil' || stroke.brushType === 'calligraphy') {
+                        lineCap = 2;
                     }
-                }
-                
-                // Add last point
-                const lastPoint = strokePoints[strokePoints.length - 1];
-                widthKeyframes.push({
-                    t: endFrame,
-                    s: [stroke.baseWidth * lastPoint.pressure]
-                });
-                
-                // Line cap
-                let lineCap = 2; // round
-                if (stroke.brushType === 'marker' || stroke.brushType === 'pencil' || stroke.brushType === 'calligraphy') {
-                    lineCap = 2; // Keep round for smoother appearance
-                }
-                
-                // Opacity
-                let opacity = 100;
-                if (stroke.brushType === 'marker') {
-                    opacity = 60;
-                } else if (stroke.brushType === 'pencil') {
-                    opacity = 70;
-                }
-                
-                const layer = {
-                    ddd: 0,
-                    ind: layerIndex + 1,
-                    ty: 4,
-                    nm: `Stroke ${strokeIdx + 1}`,
-                    sr: 1,
-                    ks: {
-                        o: { a: 0, k: opacity, ix: 11 },
-                        r: { a: 0, k: 0, ix: 10 },
-                        p: { a: 0, k: [0, 0, 0], ix: 2 },
-                        a: { a: 0, k: [0, 0, 0], ix: 1 },
-                        s: { a: 0, k: [100, 100, 100], ix: 6 }
-                    },
-                    ao: 0,
-                    shapes: [
+                    
+                    // Opacity
+                    let opacity = 100;
+                    if (stroke.brushType === 'marker') {
+                        opacity = 60;
+                    } else if (stroke.brushType === 'pencil') {
+                        opacity = 70;
+                    }
+                    
+                    const layer = {
+                        ddd: 0,
+                        ind: layerIndex + 1,
+                        ty: 4,
+                        nm: `Stroke ${strokeIdx + 1} Seg ${Math.floor(i / stepSize)}`,
+                        sr: 1,
+                        ks: {
+                            o: { a: 0, k: opacity, ix: 11 },
+                            r: { a: 0, k: 0, ix: 10 },
+                            p: { a: 0, k: [0, 0, 0], ix: 2 },
+                            a: { a: 0, k: [0, 0, 0], ix: 1 },
+                            s: { a: 0, k: [100, 100, 100], ix: 6 }
+                        },
+                        ao: 0,
+                        shapes: [
                             {
                                 ty: "gr",
                                 it: [
@@ -1430,8 +1417,8 @@
                                         e: {
                                             a: 1,
                                             k: [
-                                                { i: easing.i, o: easing.o, t: startFrame, s: [0] },
-                                                { t: endFrame, s: [100] }
+                                                { i: easing.i, o: easing.o, t: 0, s: [segmentStartPercent] },
+                                                { t: (totalDrawingDuration / 1000 / speed) * fps, s: [segmentEndPercent] }
                                             ],
                                             ix: 2
                                         },
@@ -1469,8 +1456,9 @@
                         bm: 0
                     };
                 
-                lottieJSON.layers.push(layer);
-                layerIndex++;
+                    lottieJSON.layers.push(layer);
+                    layerIndex++;
+                }
             });
             
             return lottieJSON;
