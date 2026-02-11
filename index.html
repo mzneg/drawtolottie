@@ -186,7 +186,7 @@
 <body>
     <div class="container">
         <h1>Drawing to Lottie Animation</h1>
-        <p class="subtitle">Draw with multiple brush types and export as Lottie with Framer Motion springs, custom curves, and loop options. Supports Apple Pencil and drawing tablet pressure.</p>
+        <p class="subtitle">Draw with multiple brush types and export as Lottie JSON, transparent GIF, or animated SVG. Supports mouse, touch, and stylus input.</p>
         
         <div class="settings">
             <div class="setting-group">
@@ -216,16 +216,8 @@
                 <span>x</span>
             </div>
             <div class="setting-group">
-                <label>Pressure:</label>
-                <span id="pressureValue" style="font-weight: 500; color: #007bff;">0%</span>
-            </div>
-            <div class="setting-group">
                 <input type="checkbox" id="pencilOnlyMode" style="cursor: pointer;">
                 <label for="pencilOnlyMode" style="cursor: pointer;">Apple Pencil Only</label>
-            </div>
-            <div class="setting-group">
-                <input type="checkbox" id="pressureSensitivity" checked style="cursor: pointer;">
-                <label for="pressureSensitivity" style="cursor: pointer;">Pressure Sensitivity</label>
             </div>
             <div class="setting-group">
                 <label>Smoothing:</label>
@@ -235,30 +227,6 @@
         </div>
         
         <div class="settings">
-            <div class="setting-group">
-                <label>Easing:</label>
-                <select id="easingType" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">
-                    <optgroup label="Standard">
-                        <option value="linear">Linear</option>
-                        <option value="easeIn">Ease In</option>
-                        <option value="easeOut">Ease Out</option>
-                        <option value="easeInOut">Ease In-Out</option>
-                        <option value="anticipate">Anticipate</option>
-                        <option value="overshoot">Overshoot</option>
-                    </optgroup>
-                    <optgroup label="Framer Motion">
-                        <option value="spring">Spring (Default)</option>
-                        <option value="springBouncy">Spring (Bouncy)</option>
-                        <option value="springSnappy">Spring (Snappy)</option>
-                        <option value="springGentle">Spring (Gentle)</option>
-                        <option value="springWobbly">Spring (Wobbly)</option>
-                    </optgroup>
-                    <option value="custom">Custom Curve</option>
-                </select>
-            </div>
-            <div class="setting-group">
-                <canvas id="easingPreview" width="150" height="40" style="border: 1px solid #ddd; border-radius: 4px; background: #fafafa;"></canvas>
-            </div>
             <div class="setting-group">
                 <label>Loop:</label>
                 <select id="loopType" style="padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; cursor: pointer;">
@@ -341,23 +309,10 @@
         const strokeWidthInput = document.getElementById('strokeWidth');
         const widthValueSpan = document.getElementById('widthValue');
         const animationSpeedInput = document.getElementById('animationSpeed');
-        const pressureValueSpan = document.getElementById('pressureValue');
         const pencilOnlyMode = document.getElementById('pencilOnlyMode');
-        const pressureSensitivity = document.getElementById('pressureSensitivity');
         const smoothingStrength = document.getElementById('smoothingStrength');
         const smoothingValue = document.getElementById('smoothingValue');
-        const easingTypeInput = document.getElementById('easingType');
         const loopTypeInput = document.getElementById('loopType');
-        const customCurveControls = document.getElementById('customCurveControls');
-        const curveX1Input = document.getElementById('curveX1');
-        const curveY1Input = document.getElementById('curveY1');
-        const curveX2Input = document.getElementById('curveX2');
-        const curveY2Input = document.getElementById('curveY2');
-        const curvePreviewCanvas = document.getElementById('curvePreview');
-        const curvePreviewCtx = curvePreviewCanvas.getContext('2d');
-        const easingPreviewCanvas = document.getElementById('easingPreview');
-        const easingPreviewCtx = easingPreviewCanvas.getContext('2d');
-        const curvePresets = document.getElementById('curvePresets');
         const clearBtn = document.getElementById('clearBtn');
         const undoBtn = document.getElementById('undoBtn');
         const redoBtn = document.getElementById('redoBtn');
@@ -377,14 +332,9 @@
         let lottieInstance = null;
         let easingAnimationFrame = null;
         
-        // Function to set curve values
+        // Function to set curve values (no-op since easing UI removed)
         function setCurve(x1, y1, x2, y2) {
-            curveX1Input.value = x1;
-            curveY1Input.value = y1;
-            curveX2Input.value = x2;
-            curveY2Input.value = y2;
-            drawCurvePreview();
-            animateEasingPreview();
+            // Do nothing - easing UI has been removed
         }
         
         // Make setCurve globally accessible for onclick handlers
@@ -424,75 +374,11 @@
         
         // Animate easing preview
         function animateEasingPreview() {
-            if (easingAnimationFrame) {
-                cancelAnimationFrame(easingAnimationFrame);
-            }
-            
-            const width = easingPreviewCanvas.width;
-            const height = easingPreviewCanvas.height;
-            const ballRadius = 6;
-            const startX = ballRadius + 5;
-            const endX = width - ballRadius - 5;
-            const y = height / 2;
-            
-            const duration = 1500; // 1.5 seconds
-            const startTime = Date.now();
-            
-            function animate() {
-                const elapsed = Date.now() - startTime;
-                const progress = Math.min(elapsed / duration, 1);
-                
-                // Get easing values
-                const easingType = easingTypeInput.value;
-                const easing = getEasingValues(easingType);
-                
-                // Apply easing
-                const easedProgress = cubicBezier(progress, easing.i.x[0], easing.i.y[0], easing.o.x[0], easing.o.y[0]);
-                const x = startX + (endX - startX) * easedProgress;
-                
-                // Clear and draw
-                easingPreviewCtx.clearRect(0, 0, width, height);
-                
-                // Draw track
-                easingPreviewCtx.strokeStyle = '#ddd';
-                easingPreviewCtx.lineWidth = 2;
-                easingPreviewCtx.beginPath();
-                easingPreviewCtx.moveTo(startX, y);
-                easingPreviewCtx.lineTo(endX, y);
-                easingPreviewCtx.stroke();
-                
-                // Draw ball
-                easingPreviewCtx.fillStyle = '#007bff';
-                easingPreviewCtx.beginPath();
-                easingPreviewCtx.arc(x, y, ballRadius, 0, Math.PI * 2);
-                easingPreviewCtx.fill();
-                
-                if (progress < 1) {
-                    easingAnimationFrame = requestAnimationFrame(animate);
-                } else {
-                    // Loop the animation
-                    setTimeout(() => animateEasingPreview(), 300);
-                }
-            }
-            
-            animate();
+            // No-op - easing preview UI has been removed
         }
         
-        // Show/hide custom curve controls
-        easingTypeInput.addEventListener('change', (e) => {
-            if (e.target.value === 'custom') {
-                customCurveControls.style.display = 'flex';
-                curvePresets.style.display = 'flex';
-                drawCurvePreview();
-            } else {
-                customCurveControls.style.display = 'none';
-                curvePresets.style.display = 'none';
-            }
-            animateEasingPreview();
-        });
-        
-        // Start easing preview on load
-        setTimeout(() => animateEasingPreview(), 100);
+        // Placeholder event listeners (UI removed)
+        // easingTypeInput listener removed - linear only
         
         // Sync color picker and hex input
         strokeColorInput.addEventListener('input', (e) => {
@@ -530,71 +416,7 @@
             }
         });
         
-        // Update curve preview when values change
-        curveX1Input.addEventListener('input', () => {
-            drawCurvePreview();
-            animateEasingPreview();
-        });
-        curveY1Input.addEventListener('input', () => {
-            drawCurvePreview();
-            animateEasingPreview();
-        });
-        curveX2Input.addEventListener('input', () => {
-            drawCurvePreview();
-            animateEasingPreview();
-        });
-        curveY2Input.addEventListener('input', () => {
-            drawCurvePreview();
-            animateEasingPreview();
-        });
-        
-        function drawCurvePreview() {
-            const x1 = parseFloat(curveX1Input.value);
-            const y1 = parseFloat(curveY1Input.value);
-            const x2 = parseFloat(curveX2Input.value);
-            const y2 = parseFloat(curveY2Input.value);
-            
-            const width = curvePreviewCanvas.width;
-            const height = curvePreviewCanvas.height;
-            const padding = 10;
-            
-            curvePreviewCtx.clearRect(0, 0, width, height);
-            
-            // Draw grid
-            curvePreviewCtx.strokeStyle = '#eee';
-            curvePreviewCtx.lineWidth = 1;
-            curvePreviewCtx.beginPath();
-            curvePreviewCtx.moveTo(padding, padding);
-            curvePreviewCtx.lineTo(padding, height - padding);
-            curvePreviewCtx.lineTo(width - padding, height - padding);
-            curvePreviewCtx.stroke();
-            
-            // Draw bezier curve
-            curvePreviewCtx.strokeStyle = '#007bff';
-            curvePreviewCtx.lineWidth = 2;
-            curvePreviewCtx.beginPath();
-            
-            const startX = padding;
-            const startY = height - padding;
-            const endX = width - padding;
-            const endY = padding;
-            
-            const cp1X = startX + (endX - startX) * x1;
-            const cp1Y = startY - (startY - endY) * y1;
-            const cp2X = startX + (endX - startX) * x2;
-            const cp2Y = startY - (startY - endY) * y2;
-            
-            curvePreviewCtx.moveTo(startX, startY);
-            curvePreviewCtx.bezierCurveTo(cp1X, cp1Y, cp2X, cp2Y, endX, endY);
-            curvePreviewCtx.stroke();
-            
-            // Draw control points
-            curvePreviewCtx.fillStyle = '#007bff';
-            curvePreviewCtx.beginPath();
-            curvePreviewCtx.arc(cp1X, cp1Y, 3, 0, Math.PI * 2);
-            curvePreviewCtx.arc(cp2X, cp2Y, 3, 0, Math.PI * 2);
-            curvePreviewCtx.fill();
-        }
+        // Curve preview functions removed (easing UI deleted)
         
         // Update width display
         strokeWidthInput.addEventListener('input', (e) => {
@@ -614,13 +436,10 @@
         
         function getPointerPosition(e) {
             const rect = canvas.getBoundingClientRect();
-            const rawPressure = e.pressure || 0.5;
-            // If pressure sensitivity is off, use maximum pressure (1.0)
-            const pressure = pressureSensitivity.checked ? rawPressure : 1.0;
             return {
                 x: e.clientX - rect.left,
                 y: e.clientY - rect.top,
-                pressure: pressure
+                pressure: 1.0 // Always uniform width (no pressure sensitivity)
             };
         }
         
@@ -638,9 +457,6 @@
             
             const pos = getPointerPosition(e);
             const baseWidth = parseInt(strokeWidthInput.value);
-            
-            // Update pressure display
-            pressureValueSpan.textContent = Math.round(pos.pressure * 100) + '%';
             
             currentStroke = {
                 points: [],
@@ -661,8 +477,9 @@
         function draw(e) {
             if (!isDrawing) return;
             
+            // Check if pencil only mode is enabled
             if (pencilOnlyMode.checked && e.pointerType !== 'pen') {
-                return;
+                return; // Ignore touch and mouse input when pencil only mode is on
             }
             
             e.preventDefault();
@@ -675,7 +492,6 @@
                 time: Date.now() - startTime
             };
             
-            pressureValueSpan.textContent = Math.round(pos.pressure * 100) + '%';
             currentStroke.points.push(point);
             
             const len = currentStroke.points.length;
@@ -748,7 +564,6 @@
             if (!isDrawing) return;
             if (e) e.preventDefault();
             isDrawing = false;
-            pressureValueSpan.textContent = '0%';
             if (currentStroke.points.length > 0) {
                 // Apply intelligent smoothing automatically
                 currentStroke = applyAutoSmoothing(currentStroke);
@@ -765,7 +580,6 @@
             strokes = [];
             redoStack = [];
             startTime = 0;
-            pressureValueSpan.textContent = '0%';
             showStatus('Canvas cleared');
         });
         
@@ -1259,9 +1073,9 @@
         function hexToRgb(hex) {
             const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
             return result ? {
-                r: parseInt(result[1], 16) / 255,
-                g: parseInt(result[2], 16) / 255,
-                b: parseInt(result[3], 16) / 255
+                r: parseInt(result[1], 16),
+                g: parseInt(result[2], 16),
+                b: parseInt(result[3], 16)
             } : { r: 0, g: 0, b: 0 };
         }
         
@@ -1364,7 +1178,7 @@
         // Export animated SVG
         function exportAnimatedSVG() {
             const speed = parseFloat(animationSpeedInput.value);
-            const easingType = easingTypeInput.value;
+            const easingType = 'linear'; // Always use linear
             
             // Calculate total duration
             const maxTime = Math.max(...strokes.flatMap(s => s.points.map(p => p.time)));
@@ -1475,33 +1289,8 @@
         // Create filled shape segments with variable width for pressure-sensitive strokes
         
         function getEasingValues(easingType) {
-            // Custom curve
-            if (easingType === 'custom') {
-                const x1 = parseFloat(curveX1Input.value);
-                const y1 = parseFloat(curveY1Input.value);
-                const x2 = parseFloat(curveX2Input.value);
-                const y2 = parseFloat(curveY2Input.value);
-                return { i: { x: [x1], y: [y1] }, o: { x: [x2], y: [y2] } };
-            }
-            
-            const easings = {
-                // Standard easings
-                linear: { i: { x: [0], y: [0] }, o: { x: [1], y: [1] } },
-                easeIn: { i: { x: [0.42], y: [0] }, o: { x: [1], y: [1] } },
-                easeOut: { i: { x: [0], y: [0] }, o: { x: [0.58], y: [1] } },
-                easeInOut: { i: { x: [0.42], y: [0] }, o: { x: [0.58], y: [1] } },
-                anticipate: { i: { x: [0.36], y: [0] }, o: { x: [0.66], y: [-0.56] } },
-                overshoot: { i: { x: [0.34], y: [1.56] }, o: { x: [0.64], y: [1] } },
-                
-                // Framer Motion spring animations (better approximations)
-                // True springs need physics, but these bezier curves feel spring-like
-                spring: { i: { x: [0.16], y: [1] }, o: { x: [0.3], y: [1] } }, // Default spring
-                springBouncy: { i: { x: [0.68], y: [-0.6] }, o: { x: [0.32], y: [1.6] } }, // More bounce
-                springSnappy: { i: { x: [0.34], y: [1.56] }, o: { x: [0.64], y: [1] } }, // Quick settle
-                springGentle: { i: { x: [0.25], y: [0.1] }, o: { x: [0.25], y: [1] } }, // Soft and smooth
-                springWobbly: { i: { x: [0.8], y: [-0.9] }, o: { x: [0.2], y: [1.9] } } // Max overshoot
-            };
-            return easings[easingType] || easings.linear;
+            // Always return linear easing
+            return { i: { x: [0], y: [0] }, o: { x: [1], y: [1] } };
         }
         
         // Apply easing curve to a progress value (0-1)
@@ -1596,7 +1385,7 @@
             window.easingDebugCount = 0; // Reset debug counter
             const speed = parseFloat(animationSpeedInput.value);
             const fps = 30; // Lower FPS for better performance
-            const easingType = easingTypeInput.value;
+            const easingType = 'linear'; // Always use linear
             const loopType = loopTypeInput.value;
             
             // Calculate total duration
@@ -1647,7 +1436,6 @@
             
             strokes.forEach((stroke, strokeIdx) => {
                 const rgb = hexToRgb(stroke.color);
-                const easing = getEasingValues(easingType);
                 
                 const strokePoints = stroke.points;
                 if (strokePoints.length < 2) return;
@@ -1658,182 +1446,9 @@
                 const totalDrawingDuration = drawingEndTime - drawingStartTime;
                 const overallEndFrame = (totalDrawingDuration / 1000 / speed) * fps;
                 
-                // Check if stroke has significant pressure variation
-                const pressures = strokePoints.map(p => p.pressure);
-                const minPressure = Math.min(...pressures);
-                const maxPressure = Math.max(...pressures);
-                const hasPressureVariation = (maxPressure - minPressure) > 0.3; // 30% variation threshold (increased)
-                
-                if (hasPressureVariation) {
-                    // Use filled shapes with VERY LARGE segments for pressure-sensitive strokes
-                    const segmentSize = 50; // Very large to minimize layer count
-                    const stepSize = 40; // Minimal overlap
-                    
-                    for (let i = 0; i < strokePoints.length - 1; i += stepSize) {
-                        const endIdx = Math.min(i + segmentSize, strokePoints.length);
-                        const segmentPoints = strokePoints.slice(i, endIdx);
-                        
-                        if (segmentPoints.length < 2) continue;
-                        
-                        // Create variable-width outline
-                        const leftEdge = [];
-                        const rightEdge = [];
-                        
-                        for (let j = 0; j < segmentPoints.length; j++) {
-                            const p = segmentPoints[j];
-                            const width = stroke.baseWidth * p.pressure;
-                            const halfWidth = width / 2;
-                            
-                            // Calculate perpendicular direction
-                            let perpX, perpY;
-                            const globalIdx = i + j;
-                            
-                            if (globalIdx === 0) {
-                                const next = strokePoints[globalIdx + 1];
-                                const dx = next.x - p.x;
-                                const dy = next.y - p.y;
-                                const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                                perpX = -dy / len;
-                                perpY = dx / len;
-                            } else if (globalIdx === strokePoints.length - 1) {
-                                const prev = strokePoints[globalIdx - 1];
-                                const dx = p.x - prev.x;
-                                const dy = p.y - prev.y;
-                                const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                                perpX = -dy / len;
-                                perpY = dx / len;
-                            } else {
-                                const prev = strokePoints[Math.max(0, globalIdx - 1)];
-                                const next = strokePoints[Math.min(strokePoints.length - 1, globalIdx + 1)];
-                                const dx = next.x - prev.x;
-                                const dy = next.y - prev.y;
-                                const len = Math.sqrt(dx * dx + dy * dy) || 1;
-                                perpX = -dy / len;
-                                perpY = dx / len;
-                            }
-                            
-                            leftEdge.push({
-                                x: p.x + perpX * halfWidth,
-                                y: p.y + perpY * halfWidth,
-                                pressure: 1,
-                                time: p.time
-                            });
-                            
-                            rightEdge.push({
-                                x: p.x - perpX * halfWidth,
-                                y: p.y - perpY * halfWidth,
-                                pressure: 1,
-                                time: p.time
-                            });
-                        }
-                        
-                        // Create closed shape
-                        const shapePoints = [...leftEdge, ...rightEdge.reverse()];
-                        const bezierPath = createSmoothBezierPath(shapePoints);
-                        bezierPath.c = true;
-                        
-                        const startTime = segmentPoints[0].time;
-                        const endTime = segmentPoints[segmentPoints.length - 1].time;
-                        
-                        // Apply easing - NO longer modify timing, just use easing curve in animation
-                        const segmentStartPercent = (startTime - drawingStartTime) / totalDrawingDuration;
-                        const segmentEndPercent = (endTime - drawingStartTime) / totalDrawingDuration;
-                        const globalStartFrame = segmentStartPercent * overallEndFrame;
-                        const globalEndFrame = segmentEndPercent * overallEndFrame;
-                        
-                        let opacity = 100;
-                        if (stroke.brushType === 'marker') {
-                            opacity = 60;
-                        } else if (stroke.brushType === 'pencil') {
-                            opacity = 70;
-                        }
-                        
-                        const layer = {
-                            ddd: 0,
-                            ind: layerIndex + 1,
-                            ty: 4,
-                            nm: `Stroke ${strokeIdx + 1} Seg ${Math.floor(i / stepSize)}`,
-                            sr: 1,
-                            ks: {
-                                o: { a: 0, k: opacity, ix: 11 },
-                                r: { a: 0, k: 0, ix: 10 },
-                                p: { a: 0, k: [0, 0, 0], ix: 2 },
-                                a: { a: 0, k: [0, 0, 0], ix: 1 },
-                                s: { a: 0, k: [100, 100, 100], ix: 6 }
-                            },
-                            ao: 0,
-                            shapes: [
-                                {
-                                    ty: "gr",
-                                    it: [
-                                        {
-                                            ind: 0,
-                                            ty: "sh",
-                                            ix: 1,
-                                            ks: {
-                                                a: 0,
-                                                k: bezierPath,
-                                                ix: 2
-                                            },
-                                            nm: "Path 1",
-                                            mn: "ADBE Vector Shape - Group",
-                                            hd: false
-                                        },
-                                        {
-                                            ty: "fl",
-                                            c: {
-                                                a: 0,
-                                                k: [rgb.r / 255, rgb.g / 255, rgb.b / 255, 1],
-                                                ix: 4
-                                            },
-                                            o: { a: 0, k: 100, ix: 5 },
-                                            r: 1,
-                                            bm: 0,
-                                            nm: "Fill 1",
-                                            mn: "ADBE Vector Graphic - Fill",
-                                            hd: false
-                                        },
-                                        {
-                                            ty: "tr",
-                                            p: { a: 0, k: [0, 0], ix: 2 },
-                                            a: { a: 0, k: [0, 0], ix: 1 },
-                                            s: { a: 0, k: [100, 100], ix: 3 },
-                                            r: { a: 0, k: 0, ix: 6 },
-                                            o: {
-                                                a: 1,
-                                                k: [
-                                                    { i: easing.i, o: easing.o, t: globalStartFrame, s: [0] },
-                                                    { t: globalEndFrame, s: [100] }
-                                                ],
-                                                ix: 7
-                                            },
-                                            sk: { a: 0, k: 0, ix: 4 },
-                                            sa: { a: 0, k: 0, ix: 5 },
-                                            nm: "Transform"
-                                        }
-                                    ],
-                                    nm: "Shape 1",
-                                    np: 3,
-                                    cix: 2,
-                                    bm: 0,
-                                    ix: 1,
-                                    mn: "ADBE Vector Group",
-                                    hd: false
-                                }
-                            ],
-                            ip: 0,
-                            op: overallEndFrame + 30,
-                            st: 0,
-                            bm: 0
-                        };
-                        
-                        lottieJSON.layers.push(layer);
-                        layerIndex++;
-                    }
-                } else {
-                    // Use segments for uniform width strokes
-                    const segmentSize = 30; // Very large segments
-                    const stepSize = 25; // Minimal overlap
+                // Always use uniform width strokes (no pressure variation)
+                const segmentSize = 30;
+                const stepSize = 25;
                 
                 for (let i = 0; i < strokePoints.length - 1; i += stepSize) {
                     const endIdx = Math.min(i + segmentSize, strokePoints.length);
@@ -1928,7 +1543,7 @@
                                         e: {
                                             a: 1,
                                             k: [
-                                                { i: easing.i, o: easing.o, t: globalStartFrame, s: [0] },
+                                                { i: { x: [1], y: [1] }, o: { x: [0], y: [0] }, t: globalStartFrame, s: [0] },
                                                 { t: globalEndFrame, s: [100] }
                                             ],
                                             ix: 2
@@ -1970,7 +1585,6 @@
                     lottieJSON.layers.push(layer);
                     layerIndex++;
                 }
-                } // end else (uniform width strokes)
             });
             
             console.log(`Generated ${lottieJSON.layers.length} layers for ${strokes.length} strokes`);
