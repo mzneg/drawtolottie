@@ -1084,6 +1084,29 @@
             const speed = parseFloat(animationSpeedInput.value);
             const fps = 30;
             
+            // Calculate bounding box to crop to content
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            const padding = 20;
+            
+            strokes.forEach(stroke => {
+                stroke.points.forEach(point => {
+                    minX = Math.min(minX, point.x);
+                    minY = Math.min(minY, point.y);
+                    maxX = Math.max(maxX, point.x);
+                    maxY = Math.max(maxY, point.y);
+                });
+            });
+            
+            minX = Math.max(0, minX - padding);
+            minY = Math.max(0, minY - padding);
+            maxX = Math.min(canvas.width, maxX + padding);
+            maxY = Math.min(canvas.height, maxY + padding);
+            
+            const croppedWidth = Math.ceil(maxX - minX);
+            const croppedHeight = Math.ceil(maxY - minY);
+            const offsetX = minX;
+            const offsetY = minY;
+            
             // Calculate duration
             const maxTime = Math.max(...strokes.flatMap(s => s.points.map(p => p.time)));
             const totalDuration = (maxTime / 1000 / speed);
@@ -1092,8 +1115,8 @@
             
             // Create a temporary canvas for rendering
             const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = canvas.width;
-            tempCanvas.height = canvas.height;
+            tempCanvas.width = croppedWidth;
+            tempCanvas.height = croppedHeight;
             const tempCtx = tempCanvas.getContext('2d');
             
             // Use GIF.js library (loading from CDN)
@@ -1109,8 +1132,8 @@
             const gif = new GIF({
                 workers: 2,
                 quality: 10,
-                width: canvas.width,
-                height: canvas.height,
+                width: croppedWidth,
+                height: croppedHeight,
                 transparent: 0x000000, // Use black as transparent color
                 workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js'
             });
@@ -1149,12 +1172,12 @@
                         tempCtx.beginPath();
                         
                         if (i === 0) {
-                            tempCtx.moveTo(p1.x, p1.y);
+                            tempCtx.moveTo(p1.x - offsetX, p1.y - offsetY);
                         }
                         
-                        const midX = (p1.x + p2.x) / 2;
-                        const midY = (p1.y + p2.y) / 2;
-                        tempCtx.quadraticCurveTo(p1.x, p1.y, midX, midY);
+                        const midX = ((p1.x + p2.x) / 2) - offsetX;
+                        const midY = ((p1.y + p2.y) / 2) - offsetY;
+                        tempCtx.quadraticCurveTo(p1.x - offsetX, p1.y - offsetY, midX, midY);
                         tempCtx.stroke();
                     }
                 });
@@ -1180,12 +1203,35 @@
             const speed = parseFloat(animationSpeedInput.value);
             const easingType = 'linear'; // Always use linear
             
+            // Calculate bounding box to crop to content
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            const padding = 20;
+            
+            strokes.forEach(stroke => {
+                stroke.points.forEach(point => {
+                    minX = Math.min(minX, point.x);
+                    minY = Math.min(minY, point.y);
+                    maxX = Math.max(maxX, point.x);
+                    maxY = Math.max(maxY, point.y);
+                });
+            });
+            
+            minX = Math.max(0, minX - padding);
+            minY = Math.max(0, minY - padding);
+            maxX = Math.min(canvas.width, maxX + padding);
+            maxY = Math.min(canvas.height, maxY + padding);
+            
+            const croppedWidth = Math.ceil(maxX - minX);
+            const croppedHeight = Math.ceil(maxY - minY);
+            const offsetX = minX;
+            const offsetY = minY;
+            
             // Calculate total duration
             const maxTime = Math.max(...strokes.flatMap(s => s.points.map(p => p.time)));
             const totalDuration = (maxTime / 1000 / speed);
             
             // Start building SVG
-            let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${canvas.width} ${canvas.height}">
+            let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${croppedWidth}" height="${croppedHeight}" viewBox="0 0 ${croppedWidth} ${croppedHeight}">
     <defs>
         <style>
             .stroke-anim { animation-timing-function: ${getEasingCSS(easingType)}; }
@@ -1204,15 +1250,15 @@
                 const strokeEndTime = (points[points.length - 1].time / 1000 / speed);
                 const strokeDuration = strokeEndTime - strokeStartTime;
                 
-                // Build SVG path
-                let pathData = `M ${points[0].x},${points[0].y}`;
+                // Build SVG path with offset applied
+                let pathData = `M ${points[0].x - offsetX},${points[0].y - offsetY}`;
                 
                 for (let i = 0; i < points.length - 1; i++) {
                     const p1 = points[i];
                     const p2 = points[i + 1];
-                    const midX = (p1.x + p2.x) / 2;
-                    const midY = (p1.y + p2.y) / 2;
-                    pathData += ` Q ${p1.x},${p1.y} ${midX},${midY}`;
+                    const midX = ((p1.x + p2.x) / 2) - offsetX;
+                    const midY = ((p1.y + p2.y) / 2) - offsetY;
+                    pathData += ` Q ${p1.x - offsetX},${p1.y - offsetY} ${midX},${midY}`;
                 }
                 
                 // Average stroke width based on pressure
@@ -1388,6 +1434,11 @@
             const easingType = 'linear'; // Always use linear
             const loopType = loopTypeInput.value;
             
+            if (strokes.length === 0) {
+                alert('No strokes to export. Please draw something first.');
+                return null;
+            }
+            
             // Calculate total duration
             let maxTime = 0;
             strokes.forEach(stroke => {
@@ -1412,13 +1463,38 @@
                 loopValue = 2;
             }
             
+            // Calculate bounding box of all strokes to crop to content
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            const padding = 20; // Add some padding around the content
+            
+            strokes.forEach(stroke => {
+                stroke.points.forEach(point => {
+                    minX = Math.min(minX, point.x);
+                    minY = Math.min(minY, point.y);
+                    maxX = Math.max(maxX, point.x);
+                    maxY = Math.max(maxY, point.y);
+                });
+            });
+            
+            // Add padding
+            minX = Math.max(0, minX - padding);
+            minY = Math.max(0, minY - padding);
+            maxX = Math.min(canvas.width, maxX + padding);
+            maxY = Math.min(canvas.height, maxY + padding);
+            
+            // Calculate cropped dimensions
+            const croppedWidth = Math.ceil(maxX - minX);
+            const croppedHeight = Math.ceil(maxY - minY);
+            const offsetX = minX;
+            const offsetY = minY;
+            
             const lottieJSON = {
                 v: "5.7.4",
                 fr: fps,
                 ip: 0,
                 op: totalDuration + 30,
-                w: canvas.width,
-                h: canvas.height,
+                w: croppedWidth,
+                h: croppedHeight,
                 nm: "Drawing Animation",
                 ddd: 0,
                 assets: [],
@@ -1456,12 +1532,20 @@
                     
                     if (segmentPoints.length < 2) continue;
                     
+                    // Apply offset to crop to content
+                    const offsetSegmentPoints = segmentPoints.map(p => ({
+                        x: p.x - offsetX,
+                        y: p.y - offsetY,
+                        pressure: p.pressure,
+                        time: p.time
+                    }));
+                    
                     // Average pressure for this segment
-                    const avgPressure = segmentPoints.reduce((sum, p) => sum + p.pressure, 0) / segmentPoints.length;
+                    const avgPressure = offsetSegmentPoints.reduce((sum, p) => sum + p.pressure, 0) / offsetSegmentPoints.length;
                     const segmentWidth = stroke.baseWidth * avgPressure;
                     
                     // Create smooth bezier path for segment
-                    const bezierPath = createSmoothBezierPath(segmentPoints);
+                    const bezierPath = createSmoothBezierPath(offsetSegmentPoints);
                     
                     const startTime = segmentPoints[0].time;
                     const endTime = segmentPoints[segmentPoints.length - 1].time;
